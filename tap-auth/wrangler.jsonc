@@ -1,0 +1,20 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "tl2-tap-auth",
+	"compatibility_date": "2026-09-01",
+	"main": "src/index.ts",
+
+	// Serve it on a custom domain in your own Cloudflare zone. The full URL
+	// "https://<domain>" must be at most 26 characters (the launcher overwrites the
+	// game's built-in TapTap URL in place, and the shortest one is 26 bytes), so the
+	// domain itself can have at most 18 characters, e.g. "auth.example.net".
+	// workers.dev hostnames are almost always too long.
+	"workers_dev": false,
+	"preview_urls": false,
+	"routes": [{ "pattern": "auth.example.net", "custom_domain": true }],
+
+	// Off by default: nothing about players is logged. Turn on only while debugging.
+	"observability": { "enabled": false }
+
+	// secret (wrangler secret put CODE_SECRET): any long random string, signs the login codes
+}

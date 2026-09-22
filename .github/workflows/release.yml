@@ -1,0 +1,70 @@
+# Push a tag like v1.0.0 -> tests run, the launcher is built, and a GitHub Release is
+# created with the launcher exes and a server bundle attached.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python run_tests.py
+        working-directory: server
+
+  build:
+    needs: test-server
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish launcher (self-contained, no .NET needed)
+        run: dotnet publish launcher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o out/sc
+      - name: Publish launcher (small, needs .NET 10 Desktop Runtime)
+        run: dotnet publish launcher -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o out/fd
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item out/sc/TL2LobbyLauncher.exe dist/TL2LobbyLauncher.exe
+          Copy-Item out/fd/TL2LobbyLauncher.exe dist/TL2LobbyLauncher-net10-runtime.exe
+          Copy-Item launcher/servers.example.json dist/servers.example.json
+          $srv = "tl2-lobby-lite-server"
+          New-Item -ItemType Directory -Force "pkg/$srv/deploy" | Out-Null
+          Copy-Item server/*.py, server/.env.example, server/Dockerfile, server/docker-compose.yml "pkg/$srv/"
+          Copy-Item server/deploy/install.sh "pkg/$srv/deploy/"
+          Copy-Item LICENSE, README.md, README.zh-CN.md "pkg/$srv/"
+          Compress-Archive -Path "pkg/$srv" -DestinationPath "dist/$srv.zip"
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            **Players:** download `TL2LobbyLauncher.exe` (no install needed). If you already have the
+            .NET 10 Desktop Runtime, the much smaller `TL2LobbyLauncher-net10-runtime.exe` does the same.
+
+            **Server operators:** `tl2-lobby-lite-server.zip` has the server; see README for setup.
+            The Cloudflare Worker for Steam 1.26.0.1 is in `tap-auth/` in the source.
+
+      - uses: actions/upload-artifact@v4
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        with:
+          name: dist
+          path: dist/*

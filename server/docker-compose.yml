@@ -1,0 +1,9 @@
+# docker compose up -d --build
+# Host networking: publishing ~450 UDP ports through Docker's proxy is slow and fragile,
+# and the relay must see players' real source addresses.
+services:
+  lobby:
+    build: .
+    network_mode: host
+    restart: unless-stopped
+    env_file: .env

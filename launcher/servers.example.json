@@ -1,0 +1,10 @@
+{
+  "servers": [
+    {
+      "name": "My friends' server",
+      "host": "tl2.example.net",
+      "port": 4549,
+      "authUrl": "https://auth.example.net"
+    }
+  ]
+}

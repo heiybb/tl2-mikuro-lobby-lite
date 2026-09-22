@@ -1,0 +1,19 @@
+# server
+__pycache__/
+*.pyc
+.env
+*.log
+
+# tap-auth (Cloudflare Worker)
+tap-auth/node_modules/
+tap-auth/.wrangler/
+tap-auth/.dev.vars
+
+# launcher (.NET)
+launcher/bin/
+launcher/obj/
+launcher/publish/
+launcher/*.user
+launcher/.vs/
+launcher/publish-fd/
+dist/

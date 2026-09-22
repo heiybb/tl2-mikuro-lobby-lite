@@ -1,0 +1,53 @@
+<Window x:Class="TL2LobbyLauncher.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Style="{StaticResource DarkWindow}"
+        Width="560" Height="520" MinWidth="460" MinHeight="440"
+        WindowStartupLocation="CenterScreen">
+  <Grid Margin="20">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <TextBlock x:Name="txtTitle" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,16"/>
+
+    <StackPanel Grid.Row="1" Margin="0,0,0,16">
+      <TextBlock x:Name="lblGame" Style="{StaticResource Label}"/>
+      <DockPanel>
+        <Button x:Name="btnBrowse" DockPanel.Dock="Right" Margin="8,0,0,0" Click="OnBrowse"/>
+        <TextBox x:Name="txtGame" IsReadOnly="True"/>
+      </DockPanel>
+      <TextBlock x:Name="txtBuild" Foreground="{StaticResource Muted}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+    </StackPanel>
+
+    <DockPanel Grid.Row="2">
+      <TextBlock x:Name="lblServer" Style="{StaticResource Label}" DockPanel.Dock="Top"/>
+      <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
+        <Button x:Name="btnAdd" Click="OnAdd"/>
+        <Button x:Name="btnEdit" Click="OnEdit" Margin="8,0,0,0"/>
+        <Button x:Name="btnRemove" Click="OnRemove" Margin="8,0,0,0"/>
+      </StackPanel>
+      <ListBox x:Name="lstServers" SelectionChanged="OnSelectionChanged" MouseDoubleClick="OnEdit">
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <StackPanel>
+              <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+              <TextBlock Text="{Binding Detail}" Foreground="{StaticResource Muted}" FontSize="11.5"/>
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </DockPanel>
+
+    <TextBlock x:Name="txtStatus" Grid.Row="3" Margin="0,14,0,0" TextWrapping="Wrap" Foreground="{StaticResource Muted}"/>
+
+    <DockPanel Grid.Row="4" Margin="0,14,0,0" LastChildFill="False">
+      <Button x:Name="btnLaunch" DockPanel.Dock="Right" Style="{StaticResource Primary}" Click="OnLaunch" Margin="8,0,0,0"/>
+      <Button x:Name="btnApply" DockPanel.Dock="Right" Click="OnApply"/>
+    </DockPanel>
+  </Grid>
+</Window>
