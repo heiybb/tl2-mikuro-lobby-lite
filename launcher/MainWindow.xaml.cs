@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        TitleBar.Attach(this);
         Title = txtTitle.Text = Loc.T("Title");
         lblGame.Text = Loc.T("Game");
         lblServer.Text = Loc.T("Server");

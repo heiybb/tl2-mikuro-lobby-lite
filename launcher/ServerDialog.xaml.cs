@@ -12,6 +12,7 @@ public partial class ServerDialog : Window
     public ServerDialog(ServerEntry? original, IReadOnlyList<ServerEntry> all)
     {
         InitializeComponent();
+        TitleBar.Attach(this);
         _original = original;
         _all = all;
         Title = Loc.T(original == null ? "Dlg_Add" : "Dlg_Edit");
