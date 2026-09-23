@@ -52,7 +52,9 @@ public static class GameLauncher
     public enum CapResult { NotRequested, Raised, NotFound }
 
     /// <param name="CapMs">1.26 only: ms from resume until the limit was patched (diagnostics).</param>
-    public readonly record struct Result(bool Started, string? Error, int UrlsReplaced, CapResult Cap, long CapMs = -1);
+    /// <param name="ProcessId">The game's process id, 0 if it did not start.</param>
+    public readonly record struct Result(bool Started, string? Error, int UrlsReplaced, CapResult Cap, long CapMs = -1,
+                                         int ProcessId = 0);
 
     /// <summary>Blocking (the 1.26 limit patch waits for the stub to decrypt, normally well under
     /// a second); call it off the UI thread.</summary>
@@ -63,9 +65,9 @@ public static class GameLauncher
         {
             try
             {
-                Process.Start(new ProcessStartInfo { FileName = exe, Arguments = arguments, WorkingDirectory = dir,
-                                                     UseShellExecute = false })?.Dispose();
-                return new Result(true, null, 0, CapResult.NotRequested);
+                using var p = Process.Start(new ProcessStartInfo { FileName = exe, Arguments = arguments,
+                                                                   WorkingDirectory = dir, UseShellExecute = false });
+                return new Result(true, null, 0, CapResult.NotRequested, ProcessId: p?.Id ?? 0);
             }
             catch (Exception ex) { return new Result(false, ex.Message, 0, CapResult.NotRequested); }
         }
@@ -109,7 +111,7 @@ public static class GameLauncher
         }
         catch (Exception ex) { error ??= ex.Message; }
         finally { CloseHandle(pi.hProcess); }
-        return new Result(true, error, replaced, cap, capMs);
+        return new Result(true, error, replaced, cap, capMs, pi.dwProcessId);
     }
 
     // ---- mod limit ----

@@ -125,6 +125,11 @@ dotnet publish launcher -c Release -r win-x64 --self-contained true -p:PublishSi
   玩家名存在玩家自己浏览器的 cookie 里。公共实例 `tl2-auth.chr.moe` 由作者运营;想完全自己掌控就自己部署一份。
 - **启动器**:只改 `local_settings.txt` 和 `modlauncher.sch`,Steam 版写一个 `steam_appid.txt`,
   自己的设置放在 `%APPDATA%\TL2LobbyLauncher`。
+  1.26 连自建服务器时,还会在这一局游戏期间替换 `PAKS\DATA.PAK` 里的几项(TapTap 登录公告和它的
+  中文翻译,以及游戏列表里的"Server: 主机名"一行)。游戏会用一个包含文件长度的抽样哈希校验
+  `DATA.PAK`,所以新内容只在文件内部原地写入、从不追加。被覆盖的字节备份在
+  `PAKS\TL2LobbyLauncher-restore\`,游戏退出后两个文件逐字节还原,这个文件夹也随之删除。
+  游戏关着却还能看到它的话,打开一次启动器即可(或用 Steam 的"验证游戏文件的完整性")。
 - 大厅协议是**明文 TCP**,这是游戏本身决定的。`LOBBY_PASSWORD` 走客户端自带的挑战应答,
   密码本身不上线路;但这条哈希链很弱(20 轮 SHA-256),能抓到流量的人可以离线爆破短密码。
   请用足够长的随机串,把它当成「挡陌生人」,别当强认证。

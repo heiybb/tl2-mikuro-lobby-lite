@@ -40,6 +40,7 @@ public partial class MainWindow : Window
         chkOver10.IsChecked = _cfg.AllowOver10;
         txtStatus.Text = Loc.T("Hint");
 
+        PakPatch.RemoveLegacyState();
         SetGame(GameInfo.FindExe(_cfg.GameDir));
         RefreshList(_cfg.SelectedHost);
         lstMods.ItemsSource = _mods;
@@ -127,6 +128,8 @@ public partial class MainWindow : Window
     private void SetGame(string? exe)
     {
         _exe = exe;
+        // A launcher that died while the game ran leaves DATA.PAK patched; undo that first.
+        if (exe != null) PakPatch.RestoreIfNeeded(Path.GetDirectoryName(exe)!);
         _build = exe != null ? GameInfo.Build(exe) : GameBuild.Unknown;
         txtGame.Text = exe ?? "";
         txtBuild.Text = exe == null ? Loc.T("NoGame") : _build switch
@@ -279,10 +282,24 @@ public partial class MainWindow : Window
 
         btnLaunch.IsEnabled = btnApply.IsEnabled = false;
         txtStatus.Text = Loc.T("Launching");
+
+        // 1.26 with our server: our login notice and a "Server: host" line, for this run only
+        bool pakPatched = false;
+        if (_build == GameBuild.Steam126 && s != null)
+        {
+            string gameDir = Path.GetDirectoryName(exe)!;
+            string host = s.Port == LobbySettings.DefaultPort ? s.Host : $"{s.Host}:{s.Port}";
+            var p = await Task.Run(() => PakPatch.Apply(gameDir, host));
+            pakPatched = p.Patched > 0;
+            if (p.Error != null)
+                MessageBox.Show(this, Loc.F("PakPatchFailed", p.Error), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
         var r = await Task.Run(() => GameLauncher.Start(exe, args, authUrl, raiseCap, packed));
         btnLaunch.IsEnabled = btnApply.IsEnabled = true;
         if (!r.Started)
         {
+            if (pakPatched) PakPatch.RestoreIfNeeded(Path.GetDirectoryName(exe)!);
             MessageBox.Show(this, Loc.F("LaunchFailed", r.Error ?? ""), Title, MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
@@ -290,7 +307,27 @@ public partial class MainWindow : Window
             MessageBox.Show(this, Loc.T("AuthNotPatched"), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
         if (r.Cap == GameLauncher.CapResult.NotFound)
             MessageBox.Show(this, Loc.F("CapNotPatched", ModCatalog.StockMax), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+        if (pakPatched)
+        {
+            // Stay alive, hidden, so the originals go back when the game exits: a later launch
+            // straight from Steam must see the real TapTap notice.
+            Hide();
+            await WaitForGameExit(r.ProcessId, Path.GetDirectoryName(exe)!);
+            await Task.Run(() => PakPatch.RestoreIfNeeded(Path.GetDirectoryName(exe)!));
+        }
         Close();
+    }
+
+    private static async Task WaitForGameExit(int pid, string gameDir)
+    {
+        try
+        {
+            using var p = Process.GetProcessById(pid);
+            await p.WaitForExitAsync();
+        }
+        catch { /* already gone */ }
+        // If the exe hands off to a second copy of itself (a Steam restart), wait for that too.
+        while (PakPatch.GameRunning(gameDir)) await Task.Delay(2000);
     }
 
     private bool Ask(string key) =>

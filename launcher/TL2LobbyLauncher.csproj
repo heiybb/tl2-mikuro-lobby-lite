@@ -28,6 +28,8 @@
 
   <ItemGroup>
     <None Include="servers.example.json" CopyToOutputDirectory="Never" />
+    <!-- Built from the player's own DATA.PAK by pakpatch/build.py; holds our edits only. -->
+    <EmbeddedResource Include="assets/pakpatch.json" LogicalName="pakpatch.json" />
   </ItemGroup>
 
 </Project>

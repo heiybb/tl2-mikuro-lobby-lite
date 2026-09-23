@@ -140,6 +140,13 @@ both launcher variants and publishes a GitHub Release.
   want full control.
 - **The launcher** only edits `local_settings.txt` and `modlauncher.sch`, writes
   `steam_appid.txt` for Steam builds, and keeps its own settings in `%APPDATA%\TL2LobbyLauncher`.
+  On 1.26 with a custom server it also swaps a few entries in `PAKS\DATA.PAK` for the length of
+  one game session (the TapTap login notice, its Chinese translations, and a "Server: host" line
+  in the game list). The game checks `DATA.PAK` against a sampled hash that includes its length,
+  so the new entries are written inside the file, never appended. The overwritten bytes are
+  backed up in `PAKS\TL2LobbyLauncher-restore\`, and both files are put back byte-for-byte when
+  the game exits, which also deletes that folder. If you ever see it with the game closed, start
+  the launcher once (or use Steam's *Verify integrity of game files*).
 - The lobby protocol is **plain TCP**, a limit of the game itself. `LOBBY_PASSWORD` uses
   the client's built-in challenge-response, so the password never crosses the wire. Its
   hash chain is weak, though (20 rounds of SHA-256), and anyone who can sniff the traffic

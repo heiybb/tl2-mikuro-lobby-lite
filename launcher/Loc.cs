@@ -72,6 +72,7 @@ public static class Loc
         ["Mods_CapRaised"] = "At most {0} mods.",
         ["Launching"] = "Starting the game…",
         ["CapNotPatched"] = "The game started, but the mod limit could not be lifted (unsupported game version?). Only the first {0} mods will load.",
+        ["PakPatchFailed"] = "Could not swap in the login notice and server line in DATA.PAK:\n{0}\n\nThe game will start with the original ones.",
     };
 
     private static readonly Dictionary<string, string> ZhStrings = new()
@@ -134,5 +135,6 @@ public static class Loc
         ["Mods_CapRaised"] = "最多 {0} 个 MOD。",
         ["Launching"] = "正在启动游戏…",
         ["CapNotPatched"] = "游戏已启动,但没能解除 MOD 上限(游戏版本不支持?),只会加载前 {0} 个 MOD。",
+        ["PakPatchFailed"] = "没能替换 DATA.PAK 里的登录公告和服务器提示:\n{0}\n\n游戏会用原版内容启动。",
     };
 }
