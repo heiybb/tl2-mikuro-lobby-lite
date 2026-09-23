@@ -83,16 +83,25 @@ TCP/UDP.
 
 ### Supporting the Steam 1.26.0.1 build
 
-The 1.26.0.1 update replaced the name/password login with TapTap OAuth. To let those
-players in, deploy [`tap-auth/`](tap-auth) to your own Cloudflare account and give
-players its URL. They enter it as the server's *Auth URL* in the launcher. The URL can
-be at most 26 characters (`https://` plus a domain of up to 18 characters). The tap-auth
-README explains why.
+The 1.26.0.1 update replaced the name/password login with TapTap OAuth, so those
+players need an *Auth URL* in the launcher. The auth endpoint only hands out a player
+name and works with any lobby server. The launcher fills in the shared one,
+`https://tl2-auth.chr.moe`, for every new server, so a self-hosted lobby works for 1.26
+players without extra setup.
+
+If you'd rather not depend on it, deploy [`tap-auth/`](tap-auth) to your own Cloudflare
+account and have players use that URL instead. It can be at most 26 characters
+(`https://` plus a domain of up to 18 characters). The tap-auth README explains why.
 
 ## Connect as a player
 
-**With the launcher** (`launcher/`): add the server's host (and the Auth URL for 1.26),
-select it, then click **Launch game**. 1.26.0.1 players have to launch through it.
+**With the launcher** (`launcher/`): add the server's host, select it, then click
+**Launch game**. 1.26.0.1 players have to launch through it.
+
+The launcher ships with two public servers run by the author, **Mikuro Australia** and
+**Mikuro US**. Those run the full edition of the lobby, not this lite build, and keep
+statistics for server administration (online list, per-player traffic, login log). If that
+matters to you, delete them and use your own server.
 
 **By hand** (1.25.x only): quit the game completely, open
 `Documents\My Games\Runic Games\Torchlight 2\local_settings.txt` in Notepad, and set:
@@ -125,8 +134,10 @@ both launcher variants and publishes a GitHub Release.
 - **The server** holds names, IP addresses and the game list in memory only. It writes
   no files. Logs go to stdout / the systemd journal, with IPs masked by default. It makes
   no outbound connections unless you set `RELAY_IP=public`.
-- **tap-auth** has no database and logs nothing (Workers observability is off in
-  `wrangler.jsonc`). A player's name lives in a cookie in their own browser.
+- **tap-auth**, as shipped here, has no database and logs nothing (Workers observability
+  is off in `wrangler.jsonc`). A player's name lives in a cookie in their own browser. The
+  shared instance at `tl2-auth.chr.moe` is operated by the author; deploy your own if you
+  want full control.
 - **The launcher** only edits `local_settings.txt`, writes `steam_appid.txt` for Steam
   builds, and keeps its own settings in `%APPDATA%\TL2LobbyLauncher`.
 - The lobby protocol is **plain TCP**, a limit of the game itself. `LOBBY_PASSWORD` uses

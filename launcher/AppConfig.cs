@@ -31,6 +31,23 @@ public sealed class AppConfig
 
     public List<ServerEntry> Servers { get; set; } = new();
 
+    /// <summary>Which revision of <see cref="Defaults"/> has been added to this config. Defaults
+    /// are added once per revision, so a player who deletes one doesn't get it back.</summary>
+    public int DefaultsRevision { get; set; }
+
+    /// <summary>The shared TapTap stand-in (tap-auth/). It only hands out a player name and
+    /// works with any lobby server, so new servers get it by default.</summary>
+    public const string DefaultAuthUrl = "https://tl2-auth.chr.moe";
+
+    /// <summary>Public servers run by the project author (they run the full edition of the
+    /// lobby, not this lite one; see README).</summary>
+    private const int DefaultsRev = 1;
+    private static readonly ServerEntry[] Defaults =
+    {
+        new() { Name = "Mikuro Australia", Host = "tl2-mikuro-server-au.chr.moe", AuthUrl = DefaultAuthUrl },
+        new() { Name = "Mikuro US", Host = "tl2-mikuro-server-us.chr.moe", AuthUrl = DefaultAuthUrl },
+    };
+
     private static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
@@ -55,6 +72,15 @@ public sealed class AppConfig
                 : new AppConfig();
         }
         catch { cfg = new AppConfig(); }
+
+        if (cfg.DefaultsRevision < DefaultsRev)
+        {
+            foreach (var d in Defaults)
+                if (!cfg.Servers.Any(x => string.Equals(x.Host, d.Host, StringComparison.OrdinalIgnoreCase)))
+                    cfg.Servers.Add(new ServerEntry { Name = d.Name, Host = d.Host, Port = d.Port, AuthUrl = d.AuthUrl });
+            cfg.DefaultsRevision = DefaultsRev;
+            cfg.Save();
+        }
 
         try
         {

@@ -26,7 +26,7 @@ public partial class ServerDialog : Window
         txtName.Text = original?.Name ?? "";
         txtHost.Text = original?.Host ?? "";
         txtPort.Text = (original?.Port ?? LobbySettings.DefaultPort).ToString();
-        txtAuth.Text = original?.AuthUrl ?? "";
+        txtAuth.Text = original?.AuthUrl ?? AppConfig.DefaultAuthUrl;
         Loaded += (_, _) => txtName.Focus();
     }
 

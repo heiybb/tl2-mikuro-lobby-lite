@@ -13,6 +13,10 @@ It has no accounts, no database and no logging. The player name lives in a cooki
 the player's own browser. It starts as a random `Player_xxxxxx`, and players can change
 it at `https://<your-domain>/`.
 
+You don't have to deploy this. The launcher uses a shared instance at
+`https://tl2-auth.chr.moe` by default, and it works with any lobby server. Deploy your own
+if you don't want to rely on it.
+
 ## Endpoints
 
 | Method | Path | Purpose |

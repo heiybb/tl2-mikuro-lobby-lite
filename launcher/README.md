@@ -21,8 +21,10 @@ will use.
 
 1. Put `TL2LobbyLauncher.exe` anywhere. Next to `Torchlight2.exe` is easiest. It also
    finds Steam installs on its own, and **Browse…** covers everything else.
-2. **Add** your server: a name, the host (domain or IPv4), the port (default 4549), and
-   for 1.26 the Auth URL your server admin gave you.
+2. Pick one of the built-in public servers (Mikuro Australia / Mikuro US), or **Add**
+   your own: a name, the host (domain or IPv4) and the port (default 4549). The Auth URL
+   (1.26 only) defaults to the shared `https://tl2-auth.chr.moe`, which works with any
+   server. Change it only if your server admin runs their own.
 3. Select it and click **Launch game**.
 
 Settings are stored in `%APPDATA%\TL2LobbyLauncher\config.json`.

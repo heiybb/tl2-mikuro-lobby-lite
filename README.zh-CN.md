@@ -78,15 +78,19 @@ python3 lobby_server.py                # 直接前台跑
 
 ### 支持 Steam 1.26.0.1
 
-1.26.0.1 更新把用户名密码登录换成了 TapTap OAuth。要让这一版的玩家进来,把
-[`tap-auth/`](tap-auth) 部署到你自己的 Cloudflare 账号,再把它的地址发给玩家,
-玩家在启动器里填成这个服务器的「认证地址」。地址最多 26 个字符(`https://` 加
-最多 18 个字符的域名),原因见 tap-auth 的 README。
+1.26.0.1 更新把用户名密码登录换成了 TapTap OAuth,这一版的玩家需要在启动器里填「认证地址」。
+认证端点只负责发一个玩家名,跟具体哪台大厅无关。启动器给每个新服务器默认填好公共的
+`https://tl2-auth.chr.moe`,所以自建大厅不用额外配置就能让 1.26 玩家进来。
+
+不想依赖它的话,把 [`tap-auth/`](tap-auth) 部署到你自己的 Cloudflare 账号,让玩家改用你的地址。
+地址最多 26 个字符(`https://` 加最多 18 个字符的域名),原因见 tap-auth 的 README。
 
 ## 玩家怎么连
 
-**用启动器**(`launcher/`):添加服务器地址(1.26 版再填认证地址),选中,点「启动游戏」。
-1.26.0.1 必须经启动器启动。
+**用启动器**(`launcher/`):添加服务器地址,选中,点「启动游戏」。1.26.0.1 必须经启动器启动。
+
+启动器自带作者运营的两台公共服务器:**Mikuro Australia** 和 **Mikuro US**。它们跑的是完整版大厅,
+会记录用于服务器管理的统计(在线列表、流量、登录日志),不是这个精简版。介意的话删掉它们,用你自己的服务器。
 
 **手动改**(仅 1.25.x):完全退出游戏,用记事本打开
 `文档\My Games\Runic Games\Torchlight 2\local_settings.txt`,改成:
@@ -117,8 +121,8 @@ dotnet publish launcher -c Release -r win-x64 --self-contained true -p:PublishSi
 
 - **服务器**:用户名、IP、房间列表只在内存里,不写任何文件;日志只输出到 stdout /
   systemd journal,IP 默认打码;除非设了 `RELAY_IP=public`,不发起任何外部连接。
-- **tap-auth**:没有数据库,不记日志(`wrangler.jsonc` 里关了 Workers observability)。
-  玩家名存在玩家自己浏览器的 cookie 里。
+- **tap-auth**:本仓库里的版本没有数据库,不记日志(`wrangler.jsonc` 里关了 Workers observability),
+  玩家名存在玩家自己浏览器的 cookie 里。公共实例 `tl2-auth.chr.moe` 由作者运营;想完全自己掌控就自己部署一份。
 - **启动器**:只改 `local_settings.txt`,Steam 版写一个 `steam_appid.txt`,自己的设置
   放在 `%APPDATA%\TL2LobbyLauncher`。
 - 大厅协议是**明文 TCP**,这是游戏本身决定的。`LOBBY_PASSWORD` 走客户端自带的挑战应答,
