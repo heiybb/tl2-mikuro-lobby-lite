@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Style="{StaticResource DarkWindow}"
-        Width="560" Height="520" MinWidth="460" MinHeight="440"
+        Width="980" Height="580" MinWidth="760" MinHeight="480"
         WindowStartupLocation="CenterScreen">
   <Grid Margin="20">
     <Grid.RowDefinitions>
@@ -12,10 +12,15 @@
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="20"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
 
-    <TextBlock x:Name="txtTitle" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,16"/>
+    <TextBlock x:Name="txtTitle" Grid.ColumnSpan="3" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,16"/>
 
-    <StackPanel Grid.Row="1" Margin="0,0,0,16">
+    <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,0,0,16">
       <TextBlock x:Name="lblGame" Style="{StaticResource Label}"/>
       <DockPanel>
         <Button x:Name="btnBrowse" DockPanel.Dock="Right" Margin="8,0,0,0" Click="OnBrowse"/>
@@ -24,7 +29,8 @@
       <TextBlock x:Name="txtBuild" Foreground="{StaticResource Muted}" Margin="0,6,0,0" TextWrapping="Wrap"/>
     </StackPanel>
 
-    <DockPanel Grid.Row="2">
+    <!-- servers -->
+    <DockPanel Grid.Row="2" Grid.Column="0">
       <TextBlock x:Name="lblServer" Style="{StaticResource Label}" DockPanel.Dock="Top"/>
       <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
         <Button x:Name="btnAdd" Click="OnAdd"/>
@@ -43,9 +49,47 @@
       </ListBox>
     </DockPanel>
 
-    <TextBlock x:Name="txtStatus" Grid.Row="3" Margin="0,14,0,0" TextWrapping="Wrap" Foreground="{StaticResource Muted}"/>
+    <!-- mods -->
+    <DockPanel Grid.Row="2" Grid.Column="2">
+      <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+        <TextBlock x:Name="txtModCount" DockPanel.Dock="Right" Foreground="{StaticResource Muted}" FontSize="11.5"
+                   VerticalAlignment="Center"/>
+        <CheckBox x:Name="chkOver10" DockPanel.Dock="Right" Margin="0,0,14,0" FontSize="11.5"
+                  Click="OnOver10Toggled"/>
+        <TextBlock x:Name="lblMods" Style="{StaticResource Label}" Margin="0" VerticalAlignment="Center"/>
+      </DockPanel>
+      <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" LastChildFill="False">
+        <Button x:Name="btnUp" Content="▲" Click="OnModUp" Padding="10,6"/>
+        <Button x:Name="btnDown" Content="▼" Click="OnModDown" Margin="8,0,0,0" Padding="10,6"/>
+        <Button x:Name="btnModsFolder" DockPanel.Dock="Right" Click="OnModsFolder" Margin="8,0,0,0"/>
+        <Button x:Name="btnModsRefresh" DockPanel.Dock="Right" Click="OnModsRefresh"/>
+      </DockPanel>
+      <Grid>
+        <ListBox x:Name="lstMods" SelectionChanged="OnModSelectionChanged">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <DockPanel>
+                <CheckBox DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,10,0"
+                          IsChecked="{Binding IsEnabled, Mode=TwoWay}" IsEnabled="{Binding CanToggle}"
+                          Click="OnModToggled"/>
+                <StackPanel>
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Text="{Binding Detail}" Foreground="{StaticResource Muted}" FontSize="11.5"
+                             TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock x:Name="txtNoMods" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="14"
+                   VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+      </Grid>
+    </DockPanel>
 
-    <DockPanel Grid.Row="4" Margin="0,14,0,0" LastChildFill="False">
+    <TextBlock x:Name="txtStatus" Grid.Row="3" Grid.ColumnSpan="3" Margin="0,14,0,0" TextWrapping="Wrap"
+               Foreground="{StaticResource Muted}"/>
+
+    <DockPanel Grid.Row="4" Grid.ColumnSpan="3" Margin="0,14,0,0" LastChildFill="False">
       <Button x:Name="btnLaunch" DockPanel.Dock="Right" Style="{StaticResource Primary}" Click="OnLaunch" Margin="8,0,0,0"/>
       <Button x:Name="btnApply" DockPanel.Dock="Right" Click="OnApply"/>
     </DockPanel>

@@ -12,7 +12,7 @@
 |---|---|
 | [`server/`](server) | 大厅 + UDP 中继。Python 3.9+,只用标准库 |
 | [`tap-auth/`](tap-auth) | Cloudflare Worker,**只有 Steam 1.26.0.1 版需要**(这一版登录改走 TapTap OAuth) |
-| [`launcher/`](launcher) | Windows(WPF)小启动器:选服务器、启动游戏 |
+| [`launcher/`](launcher) | Windows(WPF)小启动器:选服务器、选 MOD(可突破 10 个上限)、启动游戏 |
 
 已测试版本:无 DRM 版 1.25.9.5、Steam 1.25.5.6、Steam 1.26.0.1。
 
@@ -87,7 +87,7 @@ python3 lobby_server.py                # 直接前台跑
 
 ## 玩家怎么连
 
-**用启动器**(`launcher/`):添加服务器地址,选中,点「启动游戏」。1.26.0.1 必须经启动器启动。
+**用启动器**(`launcher/`):添加服务器地址,选中,勾选要用的 MOD,点「启动游戏」。1.26.0.1 必须经启动器启动。
 
 启动器自带作者运营的两台公共服务器:**Mikuro Australia** 和 **Mikuro US**。它们跑的是完整版大厅,
 会记录用于服务器管理的统计(在线列表、流量、登录日志),不是这个精简版。介意的话删掉它们,用你自己的服务器。
@@ -123,8 +123,8 @@ dotnet publish launcher -c Release -r win-x64 --self-contained true -p:PublishSi
   systemd journal,IP 默认打码;除非设了 `RELAY_IP=public`,不发起任何外部连接。
 - **tap-auth**:本仓库里的版本没有数据库,不记日志(`wrangler.jsonc` 里关了 Workers observability),
   玩家名存在玩家自己浏览器的 cookie 里。公共实例 `tl2-auth.chr.moe` 由作者运营;想完全自己掌控就自己部署一份。
-- **启动器**:只改 `local_settings.txt`,Steam 版写一个 `steam_appid.txt`,自己的设置
-  放在 `%APPDATA%\TL2LobbyLauncher`。
+- **启动器**:只改 `local_settings.txt` 和 `modlauncher.sch`,Steam 版写一个 `steam_appid.txt`,
+  自己的设置放在 `%APPDATA%\TL2LobbyLauncher`。
 - 大厅协议是**明文 TCP**,这是游戏本身决定的。`LOBBY_PASSWORD` 走客户端自带的挑战应答,
   密码本身不上线路;但这条哈希链很弱(20 轮 SHA-256),能抓到流量的人可以离线爆破短密码。
   请用足够长的随机串,把它当成「挡陌生人」,别当强认证。

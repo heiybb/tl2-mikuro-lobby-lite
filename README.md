@@ -14,7 +14,7 @@ memory, and that's all it keeps.
 |---|---|
 | [`server/`](server) | The lobby + UDP relay. Python 3.9+, standard library only |
 | [`tap-auth/`](tap-auth) | A Cloudflare Worker, **only needed for the Steam 1.26.0.1 build** (its login goes through TapTap OAuth) |
-| [`launcher/`](launcher) | A small Windows (WPF) launcher: pick a server, start the game |
+| [`launcher/`](launcher) | A small Windows (WPF) launcher: pick a server and your mods (optionally more than 10), start the game |
 
 Tested with the DRM-free 1.25.9.5 build, Steam 1.25.5.6 and Steam 1.26.0.1.
 
@@ -95,8 +95,8 @@ account and have players use that URL instead. It can be at most 26 characters
 
 ## Connect as a player
 
-**With the launcher** (`launcher/`): add the server's host, select it, then click
-**Launch game**. 1.26.0.1 players have to launch through it.
+**With the launcher** (`launcher/`): add the server's host, select it, tick your mods,
+then click **Launch game**. 1.26.0.1 players have to launch through it.
 
 The launcher ships with two public servers run by the author, **Mikuro Australia** and
 **Mikuro US**. Those run the full edition of the lobby, not this lite build, and keep
@@ -138,8 +138,8 @@ both launcher variants and publishes a GitHub Release.
   is off in `wrangler.jsonc`). A player's name lives in a cookie in their own browser. The
   shared instance at `tl2-auth.chr.moe` is operated by the author; deploy your own if you
   want full control.
-- **The launcher** only edits `local_settings.txt`, writes `steam_appid.txt` for Steam
-  builds, and keeps its own settings in `%APPDATA%\TL2LobbyLauncher`.
+- **The launcher** only edits `local_settings.txt` and `modlauncher.sch`, writes
+  `steam_appid.txt` for Steam builds, and keeps its own settings in `%APPDATA%\TL2LobbyLauncher`.
 - The lobby protocol is **plain TCP**, a limit of the game itself. `LOBBY_PASSWORD` uses
   the client's built-in challenge-response, so the password never crosses the wire. Its
   hash chain is weak, though (20 rounds of SHA-256), and anyone who can sniff the traffic

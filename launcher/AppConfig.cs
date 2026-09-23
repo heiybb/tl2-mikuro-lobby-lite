@@ -31,6 +31,9 @@ public sealed class AppConfig
 
     public List<ServerEntry> Servers { get; set; } = new();
 
+    /// <summary>Lift the game's 10-mod limit to 100 when launching (in-memory patch).</summary>
+    public bool AllowOver10 { get; set; }
+
     /// <summary>Which revision of <see cref="Defaults"/> has been added to this config. Defaults
     /// are added once per revision, so a player who deletes one doesn't get it back.</summary>
     public int DefaultsRevision { get; set; }

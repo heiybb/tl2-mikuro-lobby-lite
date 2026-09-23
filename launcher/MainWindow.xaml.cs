@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -13,6 +15,7 @@ public partial class MainWindow : Window
     private readonly AppConfig _cfg = AppConfig.Load();
     private string? _exe;
     private GameBuild _build = GameBuild.Unknown;
+    private readonly ObservableCollection<ModItem> _mods = new();
 
     public MainWindow()
     {
@@ -26,11 +29,98 @@ public partial class MainWindow : Window
         btnRemove.Content = Loc.T("Remove");
         btnApply.Content = Loc.T("ApplyOnly");
         btnLaunch.Content = Loc.T("Launch");
+        lblMods.Text = Loc.T("Mods");
+        btnModsRefresh.Content = Loc.T("Mods_Refresh");
+        btnModsFolder.Content = Loc.T("Mods_Folder");
+        btnUp.ToolTip = Loc.T("Mods_Up");
+        btnDown.ToolTip = Loc.T("Mods_Down");
+        chkOver10.Content = Loc.T("Mods_Over10");
+        chkOver10.ToolTip = Loc.T("Mods_Over10Tip");
+        chkOver10.IsChecked = _cfg.AllowOver10;
         txtStatus.Text = Loc.T("Hint");
 
         SetGame(GameInfo.FindExe(_cfg.GameDir));
         RefreshList(_cfg.SelectedHost);
+        lstMods.ItemsSource = _mods;
+        LoadMods();
     }
+
+    // ---- mods ----
+    private void LoadMods()
+    {
+        _mods.Clear();
+        foreach (var m in ModCatalog.Load(MaxEnabled)) _mods.Add(m);
+        txtNoMods.Text = _mods.Count == 0 ? Loc.F("Mods_None", SchemeFile.ModsDir) : "";
+        UpdateModUi();
+    }
+
+    private int EnabledCount => _mods.Count(m => m.IsEnabled);
+    private int MaxEnabled => _cfg.AllowOver10 ? ModCatalog.RaisedMax : ModCatalog.StockMax;
+
+    private void OnOver10Toggled(object sender, RoutedEventArgs e)
+    {
+        bool on = chkOver10.IsChecked == true;
+        if (!on && EnabledCount > ModCatalog.StockMax)
+        {
+            chkOver10.IsChecked = true;
+            MessageBox.Show(this, Loc.F("Mods_Over10Off", ModCatalog.StockMax), Title, MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+        _cfg.AllowOver10 = on;
+        _cfg.Save();
+        UpdateModUi();
+    }
+
+    private void UpdateModUi()
+    {
+        txtModCount.Text = Loc.F("Mods_Count", EnabledCount, MaxEnabled);
+        int i = lstMods.SelectedIndex;
+        btnUp.IsEnabled = i > 0;
+        btnDown.IsEnabled = i >= 0 && i < _mods.Count - 1;
+    }
+
+    private void OnModToggled(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ModItem m } && m.IsEnabled && EnabledCount > MaxEnabled)
+        {
+            m.IsEnabled = false;
+            MessageBox.Show(this, Loc.F(_cfg.AllowOver10 ? "Mods_CapRaised" : "Mods_Cap", MaxEnabled), Title,
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        UpdateModUi();
+    }
+
+    private void OnModSelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateModUi();
+
+    private void MoveMod(int delta)
+    {
+        int i = lstMods.SelectedIndex, j = i + delta;
+        if (i < 0 || j < 0 || j >= _mods.Count) return;
+        _mods.Move(i, j);
+        lstMods.SelectedIndex = j;
+        lstMods.ScrollIntoView(_mods[j]);
+    }
+
+    private void OnModUp(object sender, RoutedEventArgs e) => MoveMod(-1);
+    private void OnModDown(object sender, RoutedEventArgs e) => MoveMod(+1);
+    private void OnModsRefresh(object sender, RoutedEventArgs e) => LoadMods();
+
+    private void OnModsFolder(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(SchemeFile.ModsDir);
+            Process.Start(new ProcessStartInfo { FileName = SchemeFile.ModsDir, UseShellExecute = true })?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    /// <summary>Enabled mods in list order = load order.</summary>
+    private List<long> EnabledGuids() => _mods.Where(m => m.IsEnabled && m.Info.Valid).Select(m => m.Info.Guid).ToList();
 
     // ---- game ----
     private void SetGame(string? exe)
@@ -134,15 +224,28 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
+        // Only touch modlauncher.sch when there are mods to manage: a player with an empty mods
+        // folder keeps whatever file another launcher wrote.
+        if (_mods.Count > 0)
+        {
+            try { SchemeFile.Write(EnabledGuids()); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, Loc.F("ApplyFailed", SchemeFile.DefaultPath, ex.Message), Title,
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
+        }
         _cfg.SelectedHost = s?.Host;
         _cfg.Save();
-        txtStatus.Text = s == null ? Loc.T("AppliedOfficial") : Loc.F("Applied", s.Display);
+        txtStatus.Text = (s == null ? Loc.T("AppliedOfficial") : Loc.F("Applied", s.Display))
+            + "  " + Loc.F("AppliedMods", EnabledGuids().Count);
         return true;
     }
 
     private void OnApply(object sender, RoutedEventArgs e) => Apply();
 
-    private void OnLaunch(object sender, RoutedEventArgs e)
+    private async void OnLaunch(object sender, RoutedEventArgs e)
     {
         if (_exe == null || !Apply()) return;
         var s = Selected;
@@ -165,7 +268,18 @@ public partial class MainWindow : Window
             else if (!Ask("NoAuthUrl")) return;
         }
 
-        var r = GameLauncher.Start(_exe, authUrl);
+        // With no mods enabled the game starts plain; otherwise it loads modlauncher.sch.
+        int modCount = EnabledGuids().Count;
+        string args = modCount > 0 ? SchemeFile.LaunchArg : "";
+        // Patch the limit only when it matters: more than 10 mods ticked.
+        bool raiseCap = _cfg.AllowOver10 && modCount > ModCatalog.StockMax;
+        bool packed = _build == GameBuild.Steam126;
+        string exe = _exe;
+
+        btnLaunch.IsEnabled = btnApply.IsEnabled = false;
+        txtStatus.Text = Loc.T("Launching");
+        var r = await Task.Run(() => GameLauncher.Start(exe, args, authUrl, raiseCap, packed));
+        btnLaunch.IsEnabled = btnApply.IsEnabled = true;
         if (!r.Started)
         {
             MessageBox.Show(this, Loc.F("LaunchFailed", r.Error ?? ""), Title, MessageBoxButton.OK, MessageBoxImage.Error);
@@ -173,6 +287,8 @@ public partial class MainWindow : Window
         }
         if (authUrl != null && r.UrlsReplaced == 0)
             MessageBox.Show(this, Loc.T("AuthNotPatched"), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+        if (r.Cap == GameLauncher.CapResult.NotFound)
+            MessageBox.Show(this, Loc.F("CapNotPatched", ModCatalog.StockMax), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
         Close();
     }
 
