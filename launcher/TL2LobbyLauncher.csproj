@@ -16,6 +16,7 @@
     <Description>Pick which online lobby server Torchlight II connects to, then launch the game.</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets/app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- Single-file publish settings; the full command is in README.md. -->
