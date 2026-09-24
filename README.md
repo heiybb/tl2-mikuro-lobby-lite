@@ -20,13 +20,18 @@ Tested with the DRM-free 1.25.9.5 build, Steam 1.25.5.6 and Steam 1.26.0.1.
 
 ## Download
 
-Prebuilt files are on the [Releases](../../releases) page:
+These links always point at the latest release:
 
-- `TL2LobbyLauncher.exe`: the launcher. It runs on Windows 10 (1903 or later) and Windows 11
-  with nothing to install, since it uses the .NET Framework 4.8 those versions ship with
-- `TL2LobbyLauncher-selfcontained.exe`: the same launcher with its own .NET 10 runtime inside.
-  Much larger; use it if the small one does not start
-- `tl2-lobby-lite-server.zip`: the server files
+- [`TL2LobbyLauncher.exe`](https://github.com/heiybb/tl2-mikuro-lobby-lite/releases/latest/download/TL2LobbyLauncher.exe):
+  the launcher. It runs on Windows 10 (1903 or later) and Windows 11 with nothing to install,
+  since it uses the .NET Framework 4.8 those versions ship with
+- [`TL2LobbyLauncher-selfcontained.exe`](https://github.com/heiybb/tl2-mikuro-lobby-lite/releases/latest/download/TL2LobbyLauncher-selfcontained.exe):
+  the same launcher with its own .NET 10 runtime inside. Much larger; use it if the small one
+  does not start
+- [`tl2-lobby-lite-server.zip`](https://github.com/heiybb/tl2-mikuro-lobby-lite/releases/latest/download/tl2-lobby-lite-server.zip):
+  the server files
+
+Release notes and older versions: [Releases](https://github.com/heiybb/tl2-mikuro-lobby-lite/releases).
 
 ## How it works
 

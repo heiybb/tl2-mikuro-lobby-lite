@@ -18,13 +18,17 @@
 
 ## 下载
 
-[Releases](../../releases) 页面有编译好的文件:
+下面的链接永远指向最新版:
 
-- `TL2LobbyLauncher.exe`:启动器。用的是 Windows 10(1903 及以后)和 Windows 11 自带的
-  .NET Framework 4.8,下载即用,不用装任何东西
-- `TL2LobbyLauncher-selfcontained.exe`:同一个启动器,内置 .NET 10 运行时。体积大很多,
-  小的那个打不开时用它
-- `tl2-lobby-lite-server.zip`:服务器文件
+- [`TL2LobbyLauncher.exe`](https://github.com/heiybb/tl2-mikuro-lobby-lite/releases/latest/download/TL2LobbyLauncher.exe):
+  启动器。用的是 Windows 10(1903 及以后)和 Windows 11 自带的 .NET Framework 4.8,
+  下载即用,不用装任何东西
+- [`TL2LobbyLauncher-selfcontained.exe`](https://github.com/heiybb/tl2-mikuro-lobby-lite/releases/latest/download/TL2LobbyLauncher-selfcontained.exe):
+  同一个启动器,内置 .NET 10 运行时。体积大很多,小的那个打不开时用它
+- [`tl2-lobby-lite-server.zip`](https://github.com/heiybb/tl2-mikuro-lobby-lite/releases/latest/download/tl2-lobby-lite-server.zip):
+  服务器文件
+
+更新说明和历史版本:[Releases](https://github.com/heiybb/tl2-mikuro-lobby-lite/releases)。
 
 ## 原理
 
