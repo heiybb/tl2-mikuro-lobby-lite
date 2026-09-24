@@ -98,6 +98,12 @@ account and have players use that URL instead. It can be at most 26 characters
 **With the launcher** (`launcher/`): add the server's host, select it, tick your mods,
 then click **Launch game**. 1.26.0.1 players have to launch through it.
 
+On 1.26 with one of your servers selected, the game's TapTap login box becomes a Mikuro one
+for that session: the button signs in through the server's Auth URL, no TapTap account needed.
+The online game list also shows which server you are on.
+
+<img src="docs/mikuro-login.png" alt="The login box on 1.26 when started from the launcher" width="360">
+
 The launcher ships with two public servers run by the author, **Mikuro Australia** and
 **Mikuro US**. Those run the full edition of the lobby, not this lite build, and keep
 statistics for server administration (online list, per-player traffic, login log). If that
