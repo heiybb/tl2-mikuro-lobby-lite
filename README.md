@@ -22,9 +22,10 @@ Tested with the DRM-free 1.25.9.5 build, Steam 1.25.5.6 and Steam 1.26.0.1.
 
 Prebuilt files are on the [Releases](../../releases) page:
 
-- `TL2LobbyLauncher.exe`: the launcher, self-contained, no install needed
-- `TL2LobbyLauncher-net10-runtime.exe`: the same launcher, much smaller, needs the
-  [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
+- `TL2LobbyLauncher.exe`: the launcher. It runs on Windows 10 (1903 or later) and Windows 11
+  with nothing to install, since it uses the .NET Framework 4.8 those versions ship with
+- `TL2LobbyLauncher-selfcontained.exe`: the same launcher with its own .NET 10 runtime inside.
+  Much larger; use it if the small one does not start
 - `tl2-lobby-lite-server.zip`: the server files
 
 ## How it works
@@ -125,9 +126,12 @@ Players don't need to open any ports.
 # server: nothing to build; run the tests with
 cd server && python run_tests.py
 
-# launcher (Windows, .NET 10 SDK)
-dotnet publish launcher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
-# -> publish/TL2LobbyLauncher.exe. Use --self-contained false for the small runtime-dependent exe.
+# launcher (Windows, .NET 10 SDK; the same SDK builds both targets)
+dotnet publish launcher -c Release -f net48 -o publish-fx
+# -> publish-fx/TL2LobbyLauncher.exe, the small one (its dependencies are embedded; the dlls
+#    publish also copies next to it are not needed)
+dotnet publish launcher -c Release -f net10.0-windows -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+# -> publish/TL2LobbyLauncher.exe, the self-contained one
 
 # tap-auth: see tap-auth/README.md (bun install && bun run deploy)
 ```

@@ -82,6 +82,6 @@ public static class LobbySettings
     private static string ValueOf(string line)
     {
         int c = line.IndexOf(':');
-        return c >= 0 ? line[(c + 1)..].Trim() : "";
+        return c >= 0 ? line.Substring(c + 1).Trim() : "";
     }
 }

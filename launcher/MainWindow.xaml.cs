@@ -144,18 +144,42 @@ public partial class MainWindow : Window
 
     private void OnBrowse(object sender, RoutedEventArgs e)
     {
-        var dlg = new OpenFolderDialog { Title = Loc.T("PickFolder") };
-        if (dlg.ShowDialog(this) != true) return;
-        string exe = Path.Combine(dlg.FolderName, GameInfo.ExeName);
+        string? folder = PickFolder();
+        if (folder == null) return;
+        string exe = Path.Combine(folder, GameInfo.ExeName);
         if (!File.Exists(exe))
         {
             MessageBox.Show(this, Loc.T("NotAGameDir"), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
-        _cfg.GameDir = dlg.FolderName;
+        _cfg.GameDir = folder;
         _cfg.Save();
         SetGame(exe);
     }
+
+    /// <summary>WPF's own folder picker exists from .NET 8 on; .NET Framework uses WinForms'.</summary>
+    private string? PickFolder()
+    {
+#if NETFRAMEWORK
+        using var dlg = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = Loc.T("PickFolder"),
+            ShowNewFolderButton = false,
+        };
+        var owner = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        return dlg.ShowDialog(new Win32Owner(owner)) == System.Windows.Forms.DialogResult.OK ? dlg.SelectedPath : null;
+#else
+        var dlg = new OpenFolderDialog { Title = Loc.T("PickFolder") };
+        return dlg.ShowDialog(this) == true ? dlg.FolderName : null;
+#endif
+    }
+
+#if NETFRAMEWORK
+    private sealed class Win32Owner(IntPtr handle) : System.Windows.Forms.IWin32Window
+    {
+        public IntPtr Handle { get; } = handle;
+    }
+#endif
 
     // ---- server list ----
     private void RefreshList(string? selectHost)
@@ -283,23 +307,37 @@ public partial class MainWindow : Window
         btnLaunch.IsEnabled = btnApply.IsEnabled = false;
         txtStatus.Text = Loc.T("Launching");
 
-        // 1.26 with our server: our login notice and a "Server: host" line, for this run only
+        // 1.26 with our server: our login notice and a "Server: host" line, for this run only.
+        // Any other launch (the official lobby, other builds) must see the stock DATA.PAK: a
+        // patch left by an earlier run would show our notice over the real TapTap login.
         bool pakPatched = false;
+        string gameDir = Path.GetDirectoryName(exe)!;
         if (_build == GameBuild.Steam126 && s != null)
         {
-            string gameDir = Path.GetDirectoryName(exe)!;
             string host = s.Port == LobbySettings.DefaultPort ? s.Host : $"{s.Host}:{s.Port}";
             var p = await Task.Run(() => PakPatch.Apply(gameDir, host));
             pakPatched = p.Patched > 0;
             if (p.Error != null)
                 MessageBox.Show(this, Loc.F("PakPatchFailed", p.Error), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+        else
+        {
+            string? err = await Task.Run(() => PakPatch.RestoreIfNeeded(gameDir));
+            if ((err != null || PakPatch.IsPatched(gameDir))
+                && MessageBox.Show(this, Loc.F("PakStillPatched", err ?? Loc.T("PakGameRunning")), Title,
+                       MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+            {
+                btnLaunch.IsEnabled = btnApply.IsEnabled = true;
+                txtStatus.Text = Loc.T("Hint");
+                return;
+            }
+        }
 
         var r = await Task.Run(() => GameLauncher.Start(exe, args, authUrl, raiseCap, packed));
         btnLaunch.IsEnabled = btnApply.IsEnabled = true;
         if (!r.Started)
         {
-            if (pakPatched) PakPatch.RestoreIfNeeded(Path.GetDirectoryName(exe)!);
+            if (pakPatched) PakPatch.RestoreIfNeeded(gameDir);
             MessageBox.Show(this, Loc.F("LaunchFailed", r.Error ?? ""), Title, MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
@@ -323,7 +361,7 @@ public partial class MainWindow : Window
         try
         {
             using var p = Process.GetProcessById(pid);
-            await p.WaitForExitAsync();
+            await Task.Run(() => p.WaitForExit());
         }
         catch { /* already gone */ }
         // If the exe hands off to a second copy of itself (a Steam restart), wait for that too.

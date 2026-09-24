@@ -1,0 +1,5 @@
+<Weavers xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="FodyWeavers.xsd">
+  <!-- net48 only (the packages are referenced for net48 only): embed the System.Text.Json
+       dependency chain into TL2LobbyLauncher.exe so the build stays a single file. -->
+  <Costura />
+</Weavers>

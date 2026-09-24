@@ -139,6 +139,6 @@ public static class ServerValidation
     {
         if (u.Length > MaxAuthUrlLength || u.Any(c => c > 0x7E || c < 0x21)) return false;
         if (!u.StartsWith("https://", StringComparison.Ordinal)) return false;
-        return IsHost(u["https://".Length..]);   // scheme + host only: no path, port or trailing slash
+        return IsHost(u.Substring("https://".Length));   // scheme + host only: no path, port or trailing slash
     }
 }

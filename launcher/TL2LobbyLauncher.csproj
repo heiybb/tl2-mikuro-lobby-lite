@@ -1,8 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!--
+    Two builds from one source:
+      net48            the small exe. .NET Framework 4.8 ships with Windows 10 1903+ and 11,
+                       so it runs without installing anything. Plain exe, no NuGet runtime deps.
+      net10.0-windows  published self-contained as the single-file exe that needs nothing at all.
+    Differences between the two are under #if NETFRAMEWORK. The commands are in README.md.
+  -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFrameworks>net48;net10.0-windows</TargetFrameworks>
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -18,6 +25,29 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>assets/app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <!-- 64-bit, like the win-x64 build: the zlib we call (clrcompression.dll) and the process
+       memory code are used from a 64-bit process. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- .NET Framework's class library has no nullable annotations, so these fire on code the
+         net10 build checks cleanly. The net10 build is the one that holds the null contract. -->
+    <NoWarn>$(NoWarn);CS8600;CS8602;CS8603;CS8604</NoWarn>
+  </PropertyGroup>
+
+  <!-- System.Text.Json on both builds, so both read and write config.json the same way.
+       Costura embeds it (and what it pulls in) into the exe at build time: still one file. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.Windows.Forms" />
+    <Using Remove="System.Net.Http" />
+    <PackageReference Include="System.Text.Json" Version="9.0.9" />
+    <PackageReference Include="Costura.Fody" Version="6.0.0" PrivateAssets="all" />
+    <PackageReference Include="Fody" Version="6.9.2" PrivateAssets="all" />
+  </ItemGroup>
 
   <!-- Single-file publish settings; the full command is in README.md. -->
   <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">

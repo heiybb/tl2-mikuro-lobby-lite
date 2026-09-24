@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.IO;
-using System.IO.Compression;
+#if NETFRAMEWORK
+using System.Runtime.InteropServices;
+#endif
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -164,11 +166,14 @@ public static class PakPatch
     {
         const string prefix = "|cFFEAAA15Server:|u ";
         int room = length - prefix.Length;
-        if (host.Length > room) host = host[..(room - 1)] + "…";
+        if (host.Length > room) host = host.Substring(0, room - 1) + "…";
         string text = prefix + host;
         int pad = length - text.Length;
         return new string(' ', pad / 2) + text + new string(' ', pad - pad / 2);
     }
+
+    /// <summary>Is a patch (ours, from any run) still in place in this game folder?</summary>
+    public static bool IsPatched(string gameDir) => Directory.Exists(new Paths(gameDir).StateDir);
 
     /// <summary>Puts back any patch left by an earlier run. No-op while the game is running.</summary>
     public static string? RestoreIfNeeded(string gameDir)
@@ -303,14 +308,14 @@ public static class PakPatch
                 {
                     var bytes = new byte[len];
                     pak.Seek(from, SeekOrigin.Begin);
-                    pak.ReadExactly(bytes);
+                    ReadFull(pak, bytes);
                     writes.Add(new Write(to, bytes));
-                    foreach (var r in byOff[from]) BitConverter.TryWriteBytes(patched.AsSpan(r.OffAt), (uint)to);
+                    foreach (var r in byOff[from]) PutU32(patched, r.OffAt, (uint)to);
                     taken.Add(from);
                 }
                 writes.Add(new Write(start, it.block));
-                BitConverter.TryWriteBytes(patched.AsSpan(it.rec.CrcAt), Crc32(it.data));
-                BitConverter.TryWriteBytes(patched.AsSpan(it.rec.OffAt + 4), (uint)it.data.Length);
+                PutU32(patched, it.rec.CrcAt, Crc32(it.data));
+                PutU32(patched, it.rec.OffAt + 4, (uint)it.data.Length);
                 if (end - start > it.block.Length) free.Add((start + it.block.Length, end - start - it.block.Length));
                 count++;
             }
@@ -326,14 +331,14 @@ public static class PakPatch
                 {
                     var old = new byte[w.Bytes.Length];
                     pak.Seek(w.At, SeekOrigin.Begin);
-                    pak.ReadExactly(old);
-                    bk.Write(old);
+                    ReadFull(pak, old);
+                    bk.Write(old, 0, old.Length);
                     st.Ranges.Add(new[] { w.At, w.Bytes.Length });
                 }
                 bk.Flush(true);
             }
             File.WriteAllBytes(p.ManBackup, man);
-            BitConverter.TryWriteBytes(patched.AsSpan(2), ManifestHash(patched));
+            PutU32(patched, 2, ManifestHash(patched));
             st.PatchedManSha = Sha(patched);
             File.WriteAllText(p.State, JsonSerializer.Serialize(st, Json));
         }
@@ -345,7 +350,7 @@ public static class PakPatch
                 foreach (var w in writes)
                 {
                     pak.Seek(w.At, SeekOrigin.Begin);
-                    pak.Write(w.Bytes);
+                    pak.Write(w.Bytes, 0, w.Bytes.Length);
                 }
                 pak.Flush(true);
                 if (pak.Length != pakLength) throw new IOException("DATA.PAK changed length");
@@ -369,7 +374,7 @@ public static class PakPatch
         foreach (var op in f.Ops!)
         {
             ms.Write(orig, pos, op.At - pos);
-            ms.Write(Convert.FromBase64String(op.Ins));
+            WriteAll(ms, Convert.FromBase64String(op.Ins));
             pos = op.At + op.Del;
         }
         ms.Write(orig, pos, orig.Length - pos);
@@ -406,8 +411,8 @@ public static class PakPatch
             string s = Encoding.Unicode.GetString(orig, o + 2, 2 * n);
             o += 2 + 2 * n;
             if (map.TryGetValue(s, out var repl)) { s = repl; hits++; }
-            ms.Write(BitConverter.GetBytes((ushort)s.Length));
-            ms.Write(Encoding.Unicode.GetBytes(s));
+            WriteAll(ms, BitConverter.GetBytes((ushort)s.Length));
+            WriteAll(ms, Encoding.Unicode.GetBytes(s));
         }
         if (hits != map.Count) return null;   // not the file we built the pairs from
         ms.Write(orig, o, orig.Length - o);
@@ -483,7 +488,7 @@ public static class PakPatch
     {
         var hdr = new byte[8];
         pak.Seek(off, SeekOrigin.Begin);
-        pak.ReadExactly(hdr);
+        ReadFull(pak, hdr);
         uint size = BitConverter.ToUInt32(hdr, 0), zsize = BitConverter.ToUInt32(hdr, 4);
         return 8L + (zsize == 0 ? size : zsize);
     }
@@ -492,35 +497,43 @@ public static class PakPatch
     {
         var hdr = new byte[8];
         pak.Seek(off, SeekOrigin.Begin);
-        pak.ReadExactly(hdr);
+        ReadFull(pak, hdr);
         uint size = BitConverter.ToUInt32(hdr, 0), zsize = BitConverter.ToUInt32(hdr, 4);
         var raw = new byte[zsize == 0 ? size : zsize];
-        pak.ReadExactly(raw);
+        ReadFull(pak, raw);
         blockLength = 8L + raw.Length;
-        if (zsize == 0) return raw;
-        var data = new byte[size];
-        using var z = new ZLibStream(new MemoryStream(raw), CompressionMode.Decompress);
-        z.ReadExactly(data);
-        return data;
+        return zsize == 0 ? raw : Zlib.Decompress(raw, (int)size);
     }
 
-    private static byte[] Inflate(byte[] z)
-    {
-        var ms = new MemoryStream();
-        using (var s = new ZLibStream(new MemoryStream(z), CompressionMode.Decompress)) s.CopyTo(ms);
-        return ms.ToArray();
-    }
+    private static byte[] Inflate(byte[] z) => Zlib.Decompress(z);
 
     /// <summary><c>[u32 size][u32 zsize][zlib]</c>, compressed as small as zlib goes.</summary>
     private static byte[] Block(byte[] data)
     {
-        var ms = new MemoryStream();
-        ms.Write(BitConverter.GetBytes((uint)data.Length));
-        ms.Write(new byte[4]);
-        using (var z = new ZLibStream(ms, CompressionLevel.SmallestSize, leaveOpen: true)) z.Write(data);
-        byte[] b = ms.ToArray();
-        BitConverter.TryWriteBytes(b.AsSpan(4), (uint)(b.Length - 8));
+        byte[] z = Zlib.Compress(data);
+        var b = new byte[8 + z.Length];
+        PutU32(b, 0, (uint)data.Length);
+        PutU32(b, 4, (uint)z.Length);
+        Buffer.BlockCopy(z, 0, b, 8, z.Length);
         return b;
+    }
+
+    private static void PutU32(byte[] b, int at, uint v)
+    {
+        b[at] = (byte)v; b[at + 1] = (byte)(v >> 8); b[at + 2] = (byte)(v >> 16); b[at + 3] = (byte)(v >> 24);
+    }
+
+    private static void WriteAll(Stream s, byte[] b) => s.Write(b, 0, b.Length);
+
+    private static void ReadFull(Stream s, byte[] b)
+    {
+        int got = 0;
+        while (got < b.Length)
+        {
+            int n = s.Read(b, got, b.Length - got);
+            if (n <= 0) throw new EndOfStreamException();
+            got += n;
+        }
     }
 
     private static void WriteRanges(string pakPath, List<long[]> ranges, byte[] backup)
@@ -542,8 +555,20 @@ public static class PakPatch
     {
         string tmp = path + ".tl2ll.tmp";
         File.WriteAllBytes(tmp, data);
+#if NETFRAMEWORK
+        if (!MoveFileExW(tmp, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+            throw new IOException($"could not replace {path} (win32 error {Marshal.GetLastWin32Error()})");
+#else
         File.Move(tmp, path, overwrite: true);
+#endif
     }
+
+#if NETFRAMEWORK
+    private const uint MOVEFILE_REPLACE_EXISTING = 0x1, MOVEFILE_WRITE_THROUGH = 0x8;
+
+    [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool MoveFileExW(string from, string to, uint flags);
+#endif
 
     private static Doc LoadDoc()
     {
@@ -552,7 +577,11 @@ public static class PakPatch
         return JsonSerializer.Deserialize<Doc>(s, Json) ?? new Doc();
     }
 
-    private static string Sha(byte[] b) => Convert.ToHexString(SHA256.HashData(b));
+    private static string Sha(byte[] b)
+    {
+        using var sha = SHA256.Create();
+        return BitConverter.ToString(sha.ComputeHash(b)).Replace("-", "");   // upper-case hex
+    }
 
     private static readonly uint[] CrcTable = Enumerable.Range(0, 256).Select(i =>
     {

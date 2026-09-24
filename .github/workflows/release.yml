@@ -30,17 +30,17 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Publish launcher (self-contained, no .NET needed)
-        run: dotnet publish launcher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o out/sc
-      - name: Publish launcher (small, needs .NET 10 Desktop Runtime)
-        run: dotnet publish launcher -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o out/fd
+      - name: Publish launcher (small, .NET Framework 4.8, ships with Windows 10 1903+ and 11)
+        run: dotnet publish launcher -c Release -f net48 -o out/fx
+      - name: Publish launcher (self-contained .NET 10, no .NET needed)
+        run: dotnet publish launcher -c Release -f net10.0-windows -r win-x64 --self-contained true -p:PublishSingleFile=true -o out/sc
 
       - name: Package
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item out/sc/TL2LobbyLauncher.exe dist/TL2LobbyLauncher.exe
-          Copy-Item out/fd/TL2LobbyLauncher.exe dist/TL2LobbyLauncher-net10-runtime.exe
+          Copy-Item out/fx/TL2LobbyLauncher.exe dist/TL2LobbyLauncher.exe
+          Copy-Item out/sc/TL2LobbyLauncher.exe dist/TL2LobbyLauncher-selfcontained.exe
           Copy-Item launcher/servers.example.json dist/servers.example.json
           $srv = "tl2-lobby-lite-server"
           New-Item -ItemType Directory -Force "pkg/$srv/deploy" | Out-Null
@@ -57,8 +57,9 @@ jobs:
           files: dist/*
           generate_release_notes: true
           body: |
-            **Players:** download `TL2LobbyLauncher.exe` (no install needed). If you already have the
-            .NET 10 Desktop Runtime, the much smaller `TL2LobbyLauncher-net10-runtime.exe` does the same.
+            **Players:** download `TL2LobbyLauncher.exe`. It runs on Windows 10 (1903 or later) and 11
+            with nothing to install. If it does not start, use `TL2LobbyLauncher-selfcontained.exe`,
+            which is much larger but brings everything it needs.
 
             **Server operators:** `tl2-lobby-lite-server.zip` has the server; see README for setup.
             The Cloudflare Worker for Steam 1.26.0.1 is in `tap-auth/` in the source.

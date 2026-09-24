@@ -20,9 +20,10 @@
 
 [Releases](../../releases) 页面有编译好的文件:
 
-- `TL2LobbyLauncher.exe`:启动器,自带运行时,下载即用
-- `TL2LobbyLauncher-net10-runtime.exe`:同一个启动器,体积小很多,需要先装
-  [.NET 10 桌面运行时](https://dotnet.microsoft.com/download/dotnet/10.0)
+- `TL2LobbyLauncher.exe`:启动器。用的是 Windows 10(1903 及以后)和 Windows 11 自带的
+  .NET Framework 4.8,下载即用,不用装任何东西
+- `TL2LobbyLauncher-selfcontained.exe`:同一个启动器,内置 .NET 10 运行时。体积大很多,
+  小的那个打不开时用它
 - `tl2-lobby-lite-server.zip`:服务器文件
 
 ## 原理
@@ -113,9 +114,11 @@ LOBBYPORT :4549
 # 服务器:无需编译;跑测试
 cd server && python run_tests.py
 
-# 启动器(Windows,.NET 10 SDK)
-dotnet publish launcher -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
-# -> publish/TL2LobbyLauncher.exe。换成 --self-contained false 得到依赖运行时的小体积版
+# 启动器(Windows,.NET 10 SDK;同一个 SDK 编两个版本)
+dotnet publish launcher -c Release -f net48 -o publish-fx
+# -> publish-fx/TL2LobbyLauncher.exe,小体积版(依赖已嵌进 exe,publish 顺带复制出来的 dll 用不上)
+dotnet publish launcher -c Release -f net10.0-windows -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+# -> publish/TL2LobbyLauncher.exe,自带运行时版
 
 # tap-auth:见 tap-auth/README.md(bun install && bun run deploy)
 ```

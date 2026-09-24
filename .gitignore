@@ -16,4 +16,9 @@ launcher/publish/
 launcher/*.user
 launcher/.vs/
 launcher/publish-fd/
+launcher/publish-fx/
+launcher/FodyWeavers.xsd
+# the README's build commands, run from the repo root
+/publish/
+/publish-fx/
 dist/

@@ -8,7 +8,7 @@ public static class Loc
     private static readonly bool Zh = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "zh";
 
     public static string T(string key) =>
-        (Zh ? ZhStrings : EnStrings).TryGetValue(key, out var s) ? s : EnStrings.GetValueOrDefault(key, key);
+        (Zh ? ZhStrings : EnStrings).TryGetValue(key, out var s) || EnStrings.TryGetValue(key, out s) ? s : key;
 
     public static string F(string key, params object[] args) => string.Format(T(key), args);
 
@@ -73,6 +73,8 @@ public static class Loc
         ["Launching"] = "Starting the game…",
         ["CapNotPatched"] = "The game started, but the mod limit could not be lifted (unsupported game version?). Only the first {0} mods will load.",
         ["PakPatchFailed"] = "Could not swap in the login notice and server line in DATA.PAK:\n{0}\n\nThe game will start with the original ones.",
+        ["PakStillPatched"] = "DATA.PAK still has this launcher's Mikuro login patch from an earlier run, and it could not be undone:\n{0}\n\nWith it, the TapTap login box shows our notice. Close the game if it is running and try again, or use Steam's \"Verify integrity of game files\".\n\nLaunch anyway?",
+        ["PakGameRunning"] = "the game from this folder is still running",
     };
 
     private static readonly Dictionary<string, string> ZhStrings = new()
@@ -136,5 +138,7 @@ public static class Loc
         ["Launching"] = "正在启动游戏…",
         ["CapNotPatched"] = "游戏已启动,但没能解除 MOD 上限(游戏版本不支持?),只会加载前 {0} 个 MOD。",
         ["PakPatchFailed"] = "没能替换 DATA.PAK 里的登录公告和服务器提示:\n{0}\n\n游戏会用原版内容启动。",
+        ["PakStillPatched"] = "DATA.PAK 里还留着上次的 Mikuro 登录补丁,而且没能还原:\n{0}\n\n不还原的话,TapTap 登录框会显示我们的公告。游戏开着的话先关掉再试,或者在 Steam 里\"验证游戏文件的完整性\"。\n\n仍然启动?",
+        ["PakGameRunning"] = "这个目录的游戏还在运行",
     };
 }

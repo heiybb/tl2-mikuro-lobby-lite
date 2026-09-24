@@ -80,7 +80,7 @@ public static class SchemeFile
         foreach (string line in File.ReadAllLines(path))
         {
             int i = line.IndexOf(GuidTag, StringComparison.OrdinalIgnoreCase);
-            if (i >= 0 && long.TryParse(line[(i + GuidTag.Length)..].Trim(), NumberStyles.Integer,
+            if (i >= 0 && long.TryParse(line.Substring(i + GuidTag.Length).Trim(), NumberStyles.Integer,
                     CultureInfo.InvariantCulture, out long g) && !guids.Contains(g))
                 guids.Add(g);
         }
@@ -148,17 +148,19 @@ public static class ModCatalog
         foreach (var m in infos)
         {
             if (!m.Valid) { rows.Add(new ModItem(m)); continue; }
-            byGuid.TryAdd(m.Guid, m);
+            if (!byGuid.ContainsKey(m.Guid)) byGuid.Add(m.Guid, m);
         }
 
         var enabled = new List<ModItem>();
         List<long> scheme;
         try { scheme = SchemeFile.Read(); } catch { scheme = new(); }
         foreach (long g in scheme)
-            if (byGuid.Remove(g, out var m) && enabled.Count < maxEnabled)
-                enabled.Add(new ModItem(m) { IsEnabled = true });
-            else if (m != null)
-                byGuid[g] = m;                       // over the cap: keep it listed, disabled
+        {
+            // over the cap, a mod stays in byGuid: still listed, disabled
+            if (enabled.Count >= maxEnabled || !byGuid.TryGetValue(g, out var m)) continue;
+            byGuid.Remove(g);
+            enabled.Add(new ModItem(m) { IsEnabled = true });
+        }
 
         var rest = byGuid.Values.OrderBy(m => m.Name, StringComparer.CurrentCultureIgnoreCase).Select(m => new ModItem(m));
         return enabled.Concat(rest).Concat(rows).ToList();
