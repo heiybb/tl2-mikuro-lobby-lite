@@ -1,11 +1,11 @@
 """
 TL2 Mikuro Lobby Lite: a self-hosted Torchlight II online lobby + UDP relay.
 
-Point the game's LOBBYHOST (LOBBYHOST_XD on 1.26.x) at this machine and players can
+Point the game's LOBBYHOST (LOBBYHOST_XD on 1.27.x) at this machine and players can
 log in, host, browse and join games through it. The game exe is not modified.
 
 What it does:
-  - handshake + login (classic StartLogin, and the 1.26.0.1 TapTap StartTapLogin)
+  - handshake + login (classic StartLogin, and the 1.27.0.0 Steam StartSteamLogin)
   - optional shared server password (LOBBY_PASSWORD), checked with the client's own
     challenge-response chain (login_hash.py); otherwise any name is let in
   - game hosting and the server browser (incl. the mod-hash list entries)
@@ -78,7 +78,7 @@ class Hub:
     # would keep people who left and could make a room look full.
     PLAYER_ACTIVE_WINDOW = 30.0
 
-    def __init__(self, password: str = "", allow_taptap: bool = True):
+    def __init__(self, password: str = "", allow_steam: bool = True):
         self.clients: dict[int, "Client"] = {}
         self.servers: dict[int, GameServer] = {}
         self._uid = itertools.count(1)
@@ -87,7 +87,7 @@ class Hub:
         self.relay_port = 4549
         self.relay: UdpRelay | None = None
         self.password = password
-        self.allow_taptap = allow_taptap
+        self.allow_steam = allow_steam
 
     def new_user_id(self) -> int:
         return next(self._uid)
@@ -151,8 +151,8 @@ class Client:
     # client-state reports (a mod hash sent early must not be lost, or modded games lose
     # their "Join" button). Hosting/browsing/matchmaking are dropped until login succeeds.
     _PRE_LOGIN_OK = frozenset({Msg.NET_CONNECT, Msg.NET_DISCONNECT, Msg.SRV_CONNECT_CALLBACK,
-                               Msg.START_LOGIN, Msg.START_TAP_LOGIN, Msg.LOGIN_RESPONSE,
-                               Msg.KEEPALIVE, Msg.SET_LANGUAGE, Msg.SET_MOD_HASH})
+                               Msg.START_LOGIN, Msg.START_STEAM_LOGIN,
+                               Msg.LOGIN_RESPONSE, Msg.KEEPALIVE, Msg.SET_LANGUAGE, Msg.SET_MOD_HASH})
 
     def __init__(self, hub: Hub, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         self.hub = hub
@@ -166,7 +166,9 @@ class Client:
         self.login_fails = 0                # consecutive failures on this connection (>=5 -> disconnect)
         self.pending_chal1 = ""
         self.pending_chal2 = ""
-        self.login_mode = "classic"         # "classic" = StartLogin(8), "taptap" = StartTapLogin(54)
+        # "classic" = StartLogin(8), "steam" = StartSteamLogin(55). "steam" is an external login
+        # that can't carry a server password.
+        self.login_mode = "classic"
         self.mod_hash = 0
         # Game this client is in (0 = none). Set for the host in add_server and for a joiner
         # when matchmaking succeeds. Only used to check that mesh peers are in the same game.
@@ -263,49 +265,51 @@ class Client:
         log.info("login request user=%r ver=%d", self.username, ver)
         await self._send_challenge()
 
-    async def on_start_tap_login(self, r: Reader, raw: bytes):
-        # StartTapLogin(54), 1.26.0.1: [u16][u64 guid][u32 ver][u16][str16 credential][str8 token]
-        # credential = kid + "," + mac_key, both issued by the auth endpoint the launcher
-        # points the game at (tap-auth/). kid is used as the display name.
+    async def on_start_steam_login(self, r: Reader, raw: bytes):
+        # StartSteamLogin(55), 1.27.0.0: [u16][u64 guid][u32][u16 obfPort]
+        # [blob(64) credential][str8 name]. The first three fields have the same shape as
+        # classic StartLogin (character info; the u64 is the character GUID, not a SteamID).
+        # The Steam ticket was already exchanged for the credential at the auth endpoint the
+        # launcher points the game at (tap-auth/); the credential is not re-checked here.
+        # There is NO challenge-response in this mode: the real client never answers a
+        # LoginChallenge and only waits for LoginResult (success check at 0x0069BE80), so a
+        # challenge would leave it hanging for 30 s until it disconnects. Reply directly.
         try:
-            r.u16(); r.u64(); ver = r.u32(); r.u16()
-            credential = r.str16(); r.str8()
+            r.u16(); guid = r.u64(); r.u32(); r.u16()
+            r.blob(64)
+            name = r.str8()
         except EOFError:
-            credential, ver = "", 0
-        self.login_mode = "taptap"
-        kid = credential.partition(",")[0]
-        self.username = clean_name(kid)
-        log.info("login request (TapTap) user=%r ver=%d", self.username, ver)
-        await self._send_challenge()
+            name, guid = "", 0
+        self.login_mode = "steam"
+        self.username = clean_name(name) or f"Player_{guid & 0xFFFFFF:06x}"
+        log.info("login request (Steam) user=%r guid=%#x", self.username, guid)
+        if self.hub.allow_steam:
+            await self._accept_login()
+        else:
+            await self._refuse_login("steam_disabled")
 
     async def on_login_response(self, r: Reader, raw: bytes):
         resp_hex = login_hash.extract_response_hex(raw)
-        if self.login_mode == "taptap":
-            # 1.26 clears the password field in TapTap mode, so it cannot carry a server
-            # password. Allowed or refused as a whole by ALLOW_TAPTAP.
-            ok = self.hub.allow_taptap
-            reason = "taptap_disabled"
-            if log.isEnabledFor(logging.DEBUG):
-                empty = login_hash.verify(login_hash.derive_verifier("", self.pending_chal1),
-                                          self.pending_chal2, resp_hex)
-                log.debug("TapTap LoginResponse: empty-password chain %s", "matches" if empty else "differs")
-        elif self.hub.password:
+        if self.hub.password:
             ok = login_hash.verify(login_hash.derive_verifier(self.hub.password, self.pending_chal1),
                                    self.pending_chal2, resp_hex)
-            reason = "bad_password"
         else:
-            ok, reason = True, ""
+            ok = True
+        if ok:
+            await self._accept_login()
+        else:
+            await self._refuse_login("bad_password")
 
-        if not ok:
-            self.login_fails += 1
-            log.info("login refused user=%r ip=%s reason=%s", self.username, show_ip(self.ip), reason)
-            # LoginResult code != 0 = failure (client shows invalid name/password); connection stays open
-            await self.send(Writer().u8(1).u32(0).u16(0).u8(0).frame(Msg.LOGIN_RESULT), "LoginResult(refused)")
-            if self.login_fails >= 5:
-                log.info("%d failed logins in a row, closing %s", self.login_fails, show_addr(self.peer))
-                self.writer.close()
-            return
+    async def _refuse_login(self, reason: str):
+        self.login_fails += 1
+        log.info("login refused user=%r ip=%s reason=%s", self.username, show_ip(self.ip), reason)
+        # LoginResult code != 0 = failure (client shows invalid name/password); connection stays open
+        await self.send(Writer().u8(1).u32(0).u16(0).u8(0).frame(Msg.LOGIN_RESULT), "LoginResult(refused)")
+        if self.login_fails >= 5:
+            log.info("%d failed logins in a row, closing %s", self.login_fails, show_addr(self.peer))
+            self.writer.close()
 
+    async def _accept_login(self):
         self.logged_in = True
         log.info("login ok user=%r ip=%s", self.username, show_ip(self.ip))
         # LoginResult: u8 code (0 = success), u32 sessionKey, u16, u8 count = 0
@@ -530,7 +534,7 @@ HANDLERS = {
     Msg.NET_DISCONNECT:         Client.on_ignore,
     Msg.SRV_CONNECT_CALLBACK:   Client.on_ignore,
     Msg.START_LOGIN:            Client.on_start_login,
-    Msg.START_TAP_LOGIN:        Client.on_start_tap_login,
+    Msg.START_STEAM_LOGIN:      Client.on_start_steam_login,
     Msg.LOGIN_RESPONSE:         Client.on_login_response,
     Msg.KEEPALIVE:              Client.on_keepalive,
     Msg.SET_LANGUAGE:           Client.on_ignore,
@@ -715,8 +719,8 @@ def detect_public_ip() -> str:
 
 
 async def main_async(host: str, port: int, relay_ip: str, relay_port: int, relay_port_range: str,
-                     password: str, allow_taptap: bool):
-    hub = Hub(password=password, allow_taptap=allow_taptap)
+                     password: str, allow_steam: bool):
+    hub = Hub(password=password, allow_steam=allow_steam)
     if relay_ip == "public":
         relay_ip = detect_public_ip()
     elif relay_ip == "auto":
@@ -756,8 +760,8 @@ async def main_async(host: str, port: int, relay_ip: str, relay_port: int, relay
         log.warning("RELAY_PORT_RANGE is off: single-port mode, only one joiner per game")
 
     if password:
-        log.info("server password is ON for classic logins; 1.26 TapTap logins are %s",
-                 "allowed" if allow_taptap else "refused")
+        log.info("server password is ON for classic logins; 1.27 Steam logins are %s",
+                 "allowed" if allow_steam else "refused")
     else:
         log.info("no server password: any player name is let in")
 
@@ -826,7 +830,7 @@ def main():
         log.info("loaded %s: %s", env_path, ", ".join(sorted(loaded)))    # key names only
     try:
         asyncio.run(main_async(args.host, args.port, args.relay_ip, args.relay_port, args.relay_port_range,
-                               os.environ.get("LOBBY_PASSWORD", ""), env_bool("ALLOW_TAPTAP", True)))
+                               os.environ.get("LOBBY_PASSWORD", ""), env_bool("ALLOW_STEAM", True)))
     except KeyboardInterrupt:
         pass
 

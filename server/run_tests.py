@@ -18,7 +18,7 @@ PY = sys.executable
 
 def start_server(port: int, pool: str, **env) -> subprocess.Popen:
     e = {k: v for k, v in os.environ.items() if k not in (
-        "LOBBY_PASSWORD", "ALLOW_TAPTAP", "RELAY_IP", "RELAY_PORT_RANGE", "LOBBY_VERBOSE")}
+        "LOBBY_PASSWORD", "ALLOW_STEAM", "RELAY_IP", "RELAY_PORT_RANGE", "LOBBY_VERBOSE")}
     e.update(env)
     p = subprocess.Popen([PY, str(HERE / "lobby_server.py"), "--env", "none", "--host", "127.0.0.1",
                           "--port", str(port), "--relay-port", str(port), "--relay-port-range", pool,
@@ -41,24 +41,24 @@ def run(*args: str) -> None:
 
 
 def main() -> int:
-    run("test_tap_login.py")
+    run("test_steam_login.py")
     run("test_relay_pairs.py")
 
     open_srv = start_server(14549, "24600-24610")
     try:
         run("test_client.py", "--port", "14549")
-        run("test_tap_login.py", "--port", "14549")
+        run("test_steam_login.py", "--port", "14549")
         run("test_matchmaking.py", "--port", "14549", "--range", "24600-24610")
     finally:
         open_srv.terminate()
 
-    pw_srv = start_server(14559, "24620-24625", LOBBY_PASSWORD="correct horse", ALLOW_TAPTAP="0")
+    pw_srv = start_server(14559, "24620-24625", LOBBY_PASSWORD="correct horse", ALLOW_STEAM="0")
     try:
         run("test_client.py", "--port", "14559", "--password", "correct horse")
         run("test_client.py", "--port", "14559", "--password", "wrong", "--expect-reject")
         run("test_client.py", "--port", "14559", "--expect-reject")
-        print("$ TapTap login on a server with ALLOW_TAPTAP=0 must be refused", flush=True)
-        r = subprocess.run([PY, "test_tap_login.py", "--port", "14559"], cwd=HERE,
+        print("$ Steam logins on a server with ALLOW_STEAM=0 must be refused", flush=True)
+        r = subprocess.run([PY, "test_steam_login.py", "--port", "14559"], cwd=HERE,
                            capture_output=True, encoding="utf-8", errors="replace")
         assert r.returncode != 0 and "refused" in r.stdout + r.stderr, r.stdout + r.stderr
         print("[OK] refused")

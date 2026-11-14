@@ -10,7 +10,7 @@ public sealed class ServerEntry
     public string Host { get; set; } = "";
     public int Port { get; set; } = LobbySettings.DefaultPort;
 
-    /// <summary>1.26.0.1 only: the tap-auth Worker, e.g. "https://auth.example.net". Empty = none.</summary>
+    /// <summary>1.27.0.0 only: the tap-auth Worker, e.g. "https://auth.example.net". Empty = none.</summary>
     public string AuthUrl { get; set; } = "";
 
     [JsonIgnore]
@@ -38,8 +38,9 @@ public sealed class AppConfig
     /// are added once per revision, so a player who deletes one doesn't get it back.</summary>
     public int DefaultsRevision { get; set; }
 
-    /// <summary>The shared TapTap stand-in (tap-auth/). It only hands out a player name and
-    /// works with any lobby server, so new servers get it by default.</summary>
+    /// <summary>The author's shared auth Worker (tap-auth/), used by the public servers below.
+    /// New servers get it as a default prefill, but a self-hosted 1.27 lobby needs its own
+    /// paired worker (see tap-auth/README): change the Auth URL when you add your server.</summary>
     public const string DefaultAuthUrl = "https://tl2-auth.chr.moe";
 
     /// <summary>Public servers run by the project author (they run the full edition of the
@@ -117,9 +118,10 @@ public sealed class AppConfig
 
 public static class ServerValidation
 {
-    /// <summary>The launcher overwrites the game's built-in TapTap URL strings in place; the
-    /// shortest is "https://www.taptapauth.com" (26 bytes), so ours cannot be longer.</summary>
-    public const int MaxAuthUrlLength = 26;
+    /// <summary>The launcher overwrites the game's built-in Steam auth base in place and appends
+    /// "/", so the Auth URL must fit in that slot ("https://tl2-auth.xdgtw.com/auth/v1/", 35
+    /// chars) minus the trailing slash.</summary>
+    public const int MaxAuthUrlLength = 34;
 
     /// <summary>null = valid, otherwise a Loc key describing the problem.</summary>
     public static string? Validate(ServerEntry s)

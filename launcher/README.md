@@ -4,17 +4,14 @@ A small Windows launcher: choose which online lobby server Torchlight II connect
 choose your mods, then start the game.
 
 - Edits `Documents\My Games\Runic Games\Torchlight 2\local_settings.txt`. It writes
-  `LOBBYHOST`/`LOBBYPORT` for 1.25.x and `LOBBYHOST_XD`/`LOBBYPORT_XD` for 1.26.x,
+  `LOBBYHOST`/`LOBBYPORT` for 1.25.x and `LOBBYHOST_XD`/`LOBBYPORT_XD` for 1.27.x,
   as UTF-16LE with BOM, the same way the game writes the file.
 - **Official / don't change** removes only the lines this launcher wrote. A host you
   typed in by hand stays.
-- For the **Steam 1.26.0.1** build, when the server has an *Auth URL*, it starts the game
-  suspended and rewrites the two built-in TapTap login URLs in the game's memory to that
-  URL, then lets the game run. The exe on disk is never modified. See `../tap-auth`.
-- On 1.26 with one of your servers selected, it swaps the TapTap login box (title, button,
-  notice, and their Chinese translations) and adds a "Server: host" line to the online game
-  list, by patching a few entries of `PAKS\DATA.PAK` in place for that session only. See
-  `PakPatch.cs` and `pakpatch/build.py`; the originals go back when the game exits.
+- For the **Steam 1.27.0.0** build, when the server has an *Auth URL*, it starts the game
+  suspended and rewrites the built-in Steam auth base (a wide string in `.rdata`) to that URL
+  plus a trailing `/`, then lets the game run. The exe on disk is never modified. The Auth URL
+  worker must be paired with the lobby (its `LOBBY_HOST`/`LOBBY_PORT`); see `../tap-auth`.
 - For Steam builds it creates `steam_appid.txt` next to the exe if it's missing, so the
   game can start without Steam's Play button (Steam still has to be running).
 
@@ -26,9 +23,8 @@ choose your mods, then start the game.
 - **Allow more than 10**: the game refuses to activate an 11th mod. With this ticked, and
   more than 10 mods enabled, the launcher changes that limit to 100 in the game's memory:
   - 1.25.x: while the game is still suspended, before it runs anything;
-  - 1.26 (Steam stub): as soon as the stub has decrypted the code, with the game suspended
-    for the write. Measured on 1.26.0.1: about 0.6 s after start, about 0.5 s before the
-    game's data loading can begin.
+  - 1.27 (SteamStub): as soon as the stub has decrypted the code, with the game suspended
+    for the write (about 0.6 s after start, well before the game's data loading begins).
   Steam Workshop subscriptions are not downloaded; use `.MOD` files already in the folder.
 
 It sends nothing anywhere. Its only network effect is the lobby address the game
@@ -40,8 +36,8 @@ will use.
    finds Steam installs on its own, and **Browse…** covers everything else.
 2. Pick one of the built-in public servers (Mikuro Australia / Mikuro US), or **Add**
    your own: a name, the host (domain or IPv4) and the port (default 4549). The Auth URL
-   (1.26 only) defaults to the shared `https://tl2-auth.chr.moe`, which works with any
-   server. Change it only if your server admin runs their own.
+   (1.27 only) is the server's own `tap-auth` worker; for a self-hosted lobby it must be
+   paired with that lobby (see `../tap-auth`).
 3. Select it and click **Launch game**.
 
 Settings are stored in `%APPDATA%\TL2LobbyLauncher\config.json`.
@@ -61,8 +57,8 @@ Needs the .NET 10 SDK on Windows. One project builds two targets:
   write `config.json` alike) and its dependencies are embedded by Costura: still one file.
 - `net10.0-windows`: published self-contained, for PCs where the small one does not start.
 
-Code that differs between them is under `#if NETFRAMEWORK` (`Zlib.cs`, the folder picker,
-file replace). `Compat.cs` supplies the few compiler types .NET Framework lacks.
+Code that differs between them is under `#if NETFRAMEWORK` (the folder picker, file replace).
+`Compat.cs` supplies the few compiler types .NET Framework lacks.
 
 ```powershell
 dotnet build -c Release                     # both targets

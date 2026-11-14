@@ -7,7 +7,7 @@ namespace TL2LobbyLauncher;
 /// Points the game at a lobby server by editing local_settings.txt in the settings folder
 /// (Documents\My Games\Runic Games\Torchlight 2). The game reads the file at startup.
 ///
-/// The key names differ by build: 1.25.x uses LOBBYHOST / LOBBYPORT, the 1.26 update uses
+/// The key names differ by build: 1.25.x uses LOBBYHOST / LOBBYPORT, 1.26/1.27 use
 /// LOBBYHOST_XD / LOBBYPORT_XD. Both pairs are written every time; each build reads its own
 /// and ignores the other, so the build doesn't need to be detected here.
 ///

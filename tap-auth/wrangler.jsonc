@@ -5,16 +5,23 @@
 	"main": "src/index.ts",
 
 	// Serve it on a custom domain in your own Cloudflare zone. The full URL
-	// "https://<domain>" must be at most 26 characters (the launcher overwrites the
-	// game's built-in TapTap URL in place, and the shortest one is 26 bytes), so the
-	// domain itself can have at most 18 characters, e.g. "auth.example.net".
+	// "https://<domain>" must be at most 34 characters (the launcher overwrites the
+	// game's built-in Steam auth base in place and appends "/"; that slot is 35 chars).
 	// workers.dev hostnames are almost always too long.
 	"workers_dev": false,
 	"preview_urls": false,
 	"routes": [{ "pattern": "auth.example.net", "custom_domain": true }],
 
 	// Off by default: nothing about players is logged. Turn on only while debugging.
-	"observability": { "enabled": false }
+	"observability": { "enabled": false },
 
-	// secret (wrangler secret put CODE_SECRET): any long random string, signs the login codes
+	// The game's capabilities check compares these against its own LOBBYHOST_XD / LOBBYPORT_XD,
+	// so LOBBY_HOST / LOBBY_PORT MUST match the lobby this worker is paired with (the server
+	// whose Auth URL points here). ENVIRONMENT must match the client's STEAM_AUTH_ENVIRONMENT
+	// (default "production").
+	"vars": {
+		"LOBBY_HOST": "lobby.example.net",
+		"LOBBY_PORT": "4549",
+		"ENVIRONMENT": "production"
+	}
 }

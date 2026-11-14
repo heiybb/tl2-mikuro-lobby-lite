@@ -1,58 +1,73 @@
 # tl2-tap-auth
 
-Only needed for the **Steam 1.26.0.1** build of Torchlight II. Older builds (1.25.x) log
+Only needed for the **Steam 1.27.0.0** build of Torchlight II. Older builds (1.25.x) log
 in with a plain name and password and don't use this at all.
 
-The 1.26.0.1 update logs into the online lobby through TapTap OAuth. This Cloudflare Worker
-answers that OAuth flow instead of TapTap: it sends the game straight back with a
-code (the player doesn't click anything) and returns a player name as `kid`. The
-launcher (`../launcher`) rewrites the game's two built-in TapTap URLs in memory so they
-point here. The game's exe file on disk is not changed.
+1.27.0.0 logs into the online lobby through a Steam Web Ticket exchange, and this Cloudflare
+Worker answers it: it replies to a `capabilities` probe and a `steam/exchange` POST, handing
+back a grant so the game proceeds to the lobby. The Steam ticket is not checked (this is not
+an access gate).
 
-It has no accounts, no database and no logging. The player name lives in a cookie in
-the player's own browser. It starts as a random `Player_xxxxxx`, and players can change
-it at `https://<your-domain>/`.
+The launcher (`../launcher`) rewrites the game's built-in Steam auth base in memory so it
+points here. The game's exe file on disk is not changed.
 
-You don't have to deploy this. The launcher uses a shared instance at
-`https://tl2-auth.chr.moe` by default, and it works with any lobby server. Deploy your own
-if you don't want to rely on it.
+It has no accounts, no database and no logging, and stores nothing about players (their name
+comes from their Steam persona, which the game sends straight to the lobby).
+
+> The 1.26.0.1 TapTap login this worker used to also answer has been retired; those endpoints
+> are gone.
 
 ## Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/authorize` | 302 back to the game's `http://127.0.0.1:<port>/...` `redirect_uri` with `code` and the original `state` (non-loopback redirects are refused) |
-| POST | `/oauth2/v1/token` | checks the code, returns `{"kid":"<name>","mac_key":"-"}` |
-| GET/POST | `/`, `/name` | optional page for choosing the lobby name |
+| GET | `/capabilities` | returns `TL2AUTH\|1\|200710\|<env>\|<lobby host>\|<lobby port>\|1\|0\|` |
+| POST | `/steam/exchange` | returns `TL2GRANT\|1\|<connection key>\|<credential>\|` |
+
+Both are also served under an `/auth/v1/` prefix, so either base URL shape works.
+
+### The worker must be paired with its lobby
+
+The `capabilities` reply carries the lobby host and port, and the game checks them against the
+`LOBBYHOST_XD` / `LOBBYPORT_XD` the launcher wrote for the selected server. So **`LOBBY_HOST` /
+`LOBBY_PORT` in `wrangler.jsonc` must exactly match the lobby this worker's Auth URL is paired
+with** (same string the server's `host` uses, same port), or the game abandons login before it
+reaches the lobby. The shared `tl2-auth.chr.moe` therefore cannot serve an arbitrary
+self-hosted lobby — deploy your own worker per lobby.
+
+The game also needs Steam running and the account to own Torchlight II: it gets a real Steam
+auth ticket before calling `steam/exchange`. The worker just doesn't check the ticket.
 
 ## Deploy
 
-You need a domain in your Cloudflare account. **`https://<domain>` can be at most 26
-characters**, so the domain itself can have at most 18. The launcher overwrites the
-game's URL in place, and the shortest built-in URL is 26 bytes. For example,
-`auth.example.net` (16 characters) fits. `*.workers.dev` hostnames are almost always
-too long.
+You need a domain in your Cloudflare account. **`https://<domain>` can be at most 34
+characters**: the launcher overwrites the game's Steam auth base in place and appends `/`, and
+that slot is 35 characters. For example, `auth.example.net` fits easily. `*.workers.dev`
+hostnames are almost always too long.
 
 1. Put your domain in `wrangler.jsonc` → `routes[0].pattern`.
-2. Deploy:
+2. Set `vars.LOBBY_HOST` / `vars.LOBBY_PORT` in `wrangler.jsonc` to the lobby this worker is
+   paired with (see "The worker must be paired with its lobby" above). Leave `ENVIRONMENT` as
+   `production`.
+3. Deploy:
    ```bash
    bun install            # or npm install
    bunx wrangler login
-   bun run secret         # CODE_SECRET: any long random string
    bun run deploy
    ```
-3. Check it: `https://<domain>/` should show the name page.
-4. Players enter `https://<domain>` as the **Auth URL** of your server in the launcher.
+4. Check it: `https://<domain>/capabilities` returns the pipe-delimited line with your lobby
+   host/port.
+5. Players enter `https://<domain>` as the **Auth URL** of your server in the launcher.
    If you ship a `servers.json` next to the launcher, put it in there.
 
-Plain HTTP won't work. The game forces TLS on the token request, so the certificate
-must be valid. Cloudflare issues one for the custom domain on its own.
+Plain HTTP won't work. The game forces TLS on both requests, so the certificate must be valid.
+Cloudflare issues one for the custom domain on its own.
 
-Local test: `bun run dev` (put `CODE_SECRET=anything` in `.dev.vars`).
+Local test: `bun run dev`.
 
 ## What this is not
 
-This is not an access gate. The lobby server trusts whatever name arrives in the
-credential, and anyone can talk to the lobby directly. The Worker only exists because
-the 1.26 client won't reach the lobby without finishing an OAuth round trip. If you
-need to restrict access, use the lobby's `ALLOW_TAPTAP` / `LOBBY_PASSWORD` options.
+This is not an access gate. The lobby server trusts whatever name arrives in the credential,
+and anyone can talk to the lobby directly. The Worker only exists because the 1.27 client
+won't reach the lobby without finishing the Steam exchange. If you need to restrict access,
+use the lobby's `ALLOW_STEAM` / `LOBBY_PASSWORD` options.

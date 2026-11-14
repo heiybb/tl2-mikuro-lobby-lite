@@ -40,7 +40,6 @@ public partial class MainWindow : Window
         chkOver10.IsChecked = _cfg.AllowOver10;
         txtStatus.Text = Loc.T("Hint");
 
-        PakPatch.RemoveLegacyState();
         SetGame(GameInfo.FindExe(_cfg.GameDir));
         RefreshList(_cfg.SelectedHost);
         lstMods.ItemsSource = _mods;
@@ -128,13 +127,11 @@ public partial class MainWindow : Window
     private void SetGame(string? exe)
     {
         _exe = exe;
-        // A launcher that died while the game ran leaves DATA.PAK patched; undo that first.
-        if (exe != null) PakPatch.RestoreIfNeeded(Path.GetDirectoryName(exe)!);
         _build = exe != null ? GameInfo.Build(exe) : GameBuild.Unknown;
         txtGame.Text = exe ?? "";
         txtBuild.Text = exe == null ? Loc.T("NoGame") : _build switch
         {
-            GameBuild.Steam126 => Loc.F("Build_Steam126", GameInfo.Version(exe)),
+            GameBuild.Steam127 => Loc.F("Build_Steam127", GameInfo.Version(exe)),
             GameBuild.Steam125 => Loc.F("Build_Steam125", GameInfo.Version(exe)),
             GameBuild.DrmFree => Loc.F("Build_DrmFree", GameInfo.Version(exe)),
             _ => Loc.T("Build_Unknown"),
@@ -288,9 +285,9 @@ public partial class MainWindow : Window
             if (!GameInfo.IsSteamRunning() && !Ask("SteamNotRunning")) return;
         }
 
-        // 1.26 only: send the TapTap login to the server's own auth Worker
+        // 1.27 (Steam ticket): send the login through the server's own auth Worker
         string? authUrl = null;
-        if (_build == GameBuild.Steam126 && s != null)
+        if (GameInfo.NeedsAuthUrl(_build) && s != null)
         {
             if (!string.IsNullOrEmpty(s.AuthUrl)) authUrl = s.AuthUrl;
             else if (!Ask("NoAuthUrl")) return;
@@ -301,43 +298,16 @@ public partial class MainWindow : Window
         string args = modCount > 0 ? SchemeFile.LaunchArg : "";
         // Patch the limit only when it matters: more than 10 mods ticked.
         bool raiseCap = _cfg.AllowOver10 && modCount > ModCatalog.StockMax;
-        bool packed = _build == GameBuild.Steam126;
+        bool packed = GameInfo.IsPacked(_build);
         string exe = _exe;
 
         btnLaunch.IsEnabled = btnApply.IsEnabled = false;
         txtStatus.Text = Loc.T("Launching");
 
-        // 1.26 with our server: our login notice and a "Server: host" line, for this run only.
-        // Any other launch (the official lobby, other builds) must see the stock DATA.PAK: a
-        // patch left by an earlier run would show our notice over the real TapTap login.
-        bool pakPatched = false;
-        string gameDir = Path.GetDirectoryName(exe)!;
-        if (_build == GameBuild.Steam126 && s != null)
-        {
-            string host = s.Port == LobbySettings.DefaultPort ? s.Host : $"{s.Host}:{s.Port}";
-            var p = await Task.Run(() => PakPatch.Apply(gameDir, host));
-            pakPatched = p.Patched > 0;
-            if (p.Error != null)
-                MessageBox.Show(this, Loc.F("PakPatchFailed", p.Error), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-        else
-        {
-            string? err = await Task.Run(() => PakPatch.RestoreIfNeeded(gameDir));
-            if ((err != null || PakPatch.IsPatched(gameDir))
-                && MessageBox.Show(this, Loc.F("PakStillPatched", err ?? Loc.T("PakGameRunning")), Title,
-                       MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
-            {
-                btnLaunch.IsEnabled = btnApply.IsEnabled = true;
-                txtStatus.Text = Loc.T("Hint");
-                return;
-            }
-        }
-
         var r = await Task.Run(() => GameLauncher.Start(exe, args, authUrl, raiseCap, packed));
         btnLaunch.IsEnabled = btnApply.IsEnabled = true;
         if (!r.Started)
         {
-            if (pakPatched) PakPatch.RestoreIfNeeded(gameDir);
             MessageBox.Show(this, Loc.F("LaunchFailed", r.Error ?? ""), Title, MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
@@ -345,27 +315,7 @@ public partial class MainWindow : Window
             MessageBox.Show(this, Loc.T("AuthNotPatched"), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
         if (r.Cap == GameLauncher.CapResult.NotFound)
             MessageBox.Show(this, Loc.F("CapNotPatched", ModCatalog.StockMax), Title, MessageBoxButton.OK, MessageBoxImage.Warning);
-        if (pakPatched)
-        {
-            // Stay alive, hidden, so the originals go back when the game exits: a later launch
-            // straight from Steam must see the real TapTap notice.
-            Hide();
-            await WaitForGameExit(r.ProcessId, Path.GetDirectoryName(exe)!);
-            await Task.Run(() => PakPatch.RestoreIfNeeded(Path.GetDirectoryName(exe)!));
-        }
         Close();
-    }
-
-    private static async Task WaitForGameExit(int pid, string gameDir)
-    {
-        try
-        {
-            using var p = Process.GetProcessById(pid);
-            await Task.Run(() => p.WaitForExit());
-        }
-        catch { /* already gone */ }
-        // If the exe hands off to a second copy of itself (a Steam restart), wait for that too.
-        while (PakPatch.GameRunning(gameDir)) await Task.Delay(2000);
     }
 
     private bool Ask(string key) =>

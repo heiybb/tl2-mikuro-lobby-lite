@@ -11,10 +11,10 @@
 | 目录 | 内容 |
 |---|---|
 | [`server/`](server) | 大厅 + UDP 中继。Python 3.9+,只用标准库 |
-| [`tap-auth/`](tap-auth) | Cloudflare Worker,**只有 Steam 1.26.0.1 版需要**(这一版登录改走 TapTap OAuth) |
+| [`tap-auth/`](tap-auth) | Cloudflare Worker,**只有 Steam 1.27.0.0 版需要**(登录走 Steam Web Ticket 交换) |
 | [`launcher/`](launcher) | Windows(WPF)小启动器:选服务器、选 MOD(可突破 10 个上限)、启动游戏 |
 
-已测试版本:无 DRM 版 1.25.9.5、Steam 1.25.5.6、Steam 1.26.0.1。
+已测试版本:无 DRM 版 1.25.9.5、Steam 1.25.5.6、Steam 1.27.0.0。
 
 ## 下载
 
@@ -77,27 +77,27 @@ python3 lobby_server.py                # 直接前台跑
 | `LOBBY_PORT` / `RELAY_PORT` | `4549` | 大厅 TCP 端口 / 中继 UDP 主端口 |
 | `RELAY_PORT_RANGE` | `4550-4999` | 配对端口段;4 人局占 6 个,6 人局占 15 个 |
 | `LOBBY_PASSWORD` | 空 | 可选的服务器共享密码,对 1.25.x 客户端生效(任意用户名 + 这个密码) |
-| `ALLOW_TAPTAP` | `1` | 是否放行 1.26(TapTap 登录)客户端。它们带不了密码 |
+| `ALLOW_STEAM` | `1` | 是否放行 1.27(Steam 登录)客户端。它们带不了密码 |
 | `LOG_IPS` | `0` | `0` = 日志里玩家 IP 打码成 `a.b.x.x` |
 | `LOBBY_VERBOSE` | `0` | 打印每个大厅帧的 hexdump(调协议用) |
 
-### 支持 Steam 1.26.0.1
+### 支持 Steam 1.27.0.0
 
-1.26.0.1 更新把用户名密码登录换成了 TapTap OAuth,这一版的玩家需要在启动器里填「认证地址」。
-认证端点只负责发一个玩家名,跟具体哪台大厅无关。启动器给每个新服务器默认填好公共的
-`https://tl2-auth.chr.moe`,所以自建大厅不用额外配置就能让 1.26 玩家进来。
+1.27.0.0 把用户名密码登录换成了 Steam Web Ticket 交换,这一版的玩家需要在启动器里填「认证地址」
+(指向一个 [`tap-auth/`](tap-auth) worker)。游戏会向认证端点要「该连哪台大厅」,再拿返回值和启动器
+写的设置核对,所以 **worker 必须和你的大厅配对**:自己部署一份 `tap-auth`,把它的 `LOBBY_HOST` /
+`LOBBY_PORT` 设成你的服务器,再把这个地址给玩家。公共的 `tl2-auth.chr.moe` 做不到为任意自建大厅服务。
+1.27 还要求 Steam 在跑、账号拥有游戏(票据是游戏自己找 Steam 要的,worker 只是不校验它)。
 
-不想依赖它的话,把 [`tap-auth/`](tap-auth) 部署到你自己的 Cloudflare 账号,让玩家改用你的地址。
-地址最多 26 个字符(`https://` 加最多 18 个字符的域名),原因见 tap-auth 的 README。
+自己部署的认证地址最多 34 个字符(`https://` 加域名),原因见 tap-auth 的 README。
+
+> 更早的 Steam 版:1.25.5.6 用经典用户名密码登录(不用认证地址);1.26.0.1 的 TapTap 登录已停止支持。
 
 ## 玩家怎么连
 
-**用启动器**(`launcher/`):添加服务器地址,选中,勾选要用的 MOD,点「启动游戏」。1.26.0.1 必须经启动器启动。
+**用启动器**(`launcher/`):添加服务器地址,选中,勾选要用的 MOD,点「启动游戏」。1.27.0.0 必须经启动器启动。
 
-1.26 选了自建服务器时,这一局游戏里的 TapTap 登录框会换成 Mikuro 的:按钮走服务器的 Auth URL 登录,
-不需要 TapTap 账号;联机游戏列表顶上也会显示当前连的是哪台服务器。
-
-<img src="docs/mikuro-login.png" alt="经启动器启动时 1.26 的登录框" width="360">
+1.27 选了自建服务器时,游戏的 Steam 登录会走该服务器的 Auth URL(磁盘上的游戏文件不改)。
 
 启动器自带作者运营的两台公共服务器:**Mikuro Australia** 和 **Mikuro US**。它们跑的是完整版大厅,
 会记录用于服务器管理的统计(在线列表、流量、登录日志),不是这个精简版。介意的话删掉它们,用你自己的服务器。
@@ -134,19 +134,17 @@ dotnet publish launcher -c Release -f net10.0-windows -r win-x64 --self-containe
 - **服务器**:用户名、IP、房间列表只在内存里,不写任何文件;日志只输出到 stdout /
   systemd journal,IP 默认打码;除非设了 `RELAY_IP=public`,不发起任何外部连接。
 - **tap-auth**:本仓库里的版本没有数据库,不记日志(`wrangler.jsonc` 里关了 Workers observability),
-  玩家名存在玩家自己浏览器的 cookie 里。公共实例 `tl2-auth.chr.moe` 由作者运营;想完全自己掌控就自己部署一份。
+  不校验 Steam 票据、也不存玩家任何信息(玩家名来自 Steam 角色名,由游戏直接发给大厅)。公共实例
+  `tl2-auth.chr.moe` 由作者运营;想完全自己掌控就自己部署一份。
 - **启动器**:只改 `local_settings.txt` 和 `modlauncher.sch`,Steam 版写一个 `steam_appid.txt`,
   自己的设置放在 `%APPDATA%\TL2LobbyLauncher`。
-  1.26 连自建服务器时,还会在这一局游戏期间替换 `PAKS\DATA.PAK` 里的几项(TapTap 登录公告和它的
-  中文翻译,以及游戏列表里的"Server: 主机名"一行)。游戏会用一个包含文件长度的抽样哈希校验
-  `DATA.PAK`,所以新内容只在文件内部原地写入、从不追加。被覆盖的字节备份在
-  `PAKS\TL2LobbyLauncher-restore\`,游戏退出后两个文件逐字节还原,这个文件夹也随之删除。
-  游戏关着却还能看到它的话,打开一次启动器即可(或用 Steam 的"验证游戏文件的完整性")。
+  1.27 连自建服务器时,会在这一局游戏期间把游戏内置的 Steam 认证根地址在进程内存里改写成该服务器的
+  Auth URL,在 `.rdata` 原地覆写,磁盘上的 exe 从不改动。
 - 大厅协议是**明文 TCP**,这是游戏本身决定的。`LOBBY_PASSWORD` 走客户端自带的挑战应答,
   密码本身不上线路;但这条哈希链很弱(20 轮 SHA-256),能抓到流量的人可以离线爆破短密码。
   请用足够长的随机串,把它当成「挡陌生人」,别当强认证。
-- tap-auth **不是**准入门槛:1.26 客户端报什么名字,大厅就收什么名字。在意的话用
-  `ALLOW_TAPTAP=0` 关掉 1.26 客户端。
+- tap-auth **不是**准入门槛:1.27 客户端报什么名字,大厅就收什么名字。在意的话用
+  `ALLOW_STEAM=0` 关掉这类客户端。
 - 中继 key 是随机 32 位数;网状撮合只在同一局内的玩家之间进行。
 
 ## 局限

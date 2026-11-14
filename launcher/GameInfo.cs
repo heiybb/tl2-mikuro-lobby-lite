@@ -5,7 +5,7 @@ using Microsoft.Win32;
 
 namespace TL2LobbyLauncher;
 
-public enum GameBuild { Unknown, DrmFree, Steam125, Steam126 }
+public enum GameBuild { Unknown, DrmFree, Steam125, Steam127 }
 
 /// <summary>Finds Torchlight2.exe and tells the builds apart by file version.</summary>
 public static class GameInfo
@@ -62,12 +62,21 @@ public static class GameInfo
     public static GameBuild Build(string exe)
     {
         string v = Version(exe);
-        if (v.StartsWith("1.26", StringComparison.Ordinal)) return GameBuild.Steam126;
+        // 1.27.0.0 (Steam Web Ticket login) and up.
+        if (v.StartsWith("1.27", StringComparison.Ordinal)) return GameBuild.Steam127;
         if (v == "1.25.5.6") return GameBuild.Steam125;
         return v.Length > 0 ? GameBuild.DrmFree : GameBuild.Unknown;
     }
 
-    public static bool IsSteam(GameBuild b) => b is GameBuild.Steam125 or GameBuild.Steam126;
+    public static bool IsSteam(GameBuild b) => b is GameBuild.Steam125 or GameBuild.Steam127;
+
+    /// <summary>Builds whose online login is externally authenticated and needs an Auth URL:
+    /// 1.27 through a Steam Web Ticket exchange.</summary>
+    public static bool NeedsAuthUrl(GameBuild b) => b is GameBuild.Steam127;
+
+    /// <summary>Steam builds whose .text is encrypted by the SteamStub until it runs, so the
+    /// mod-limit patch must wait for decryption instead of writing while suspended.</summary>
+    public static bool IsPacked(GameBuild b) => b is GameBuild.Steam127;
 
     /// <summary>A steam_appid.txt next to the exe lets the Steam build start without going
     /// through the Steam client's Play button (Steam must still be running).</summary>

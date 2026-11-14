@@ -2,7 +2,7 @@
 TL2 lobby wire protocol: framing and primitives.
 
 Reverse-engineered from Torchlight2.exe (1.25.9.5, cross-checked on Steam 1.25.5.6
-and 1.26.0.1).
+and 1.26.0.1; Steam login confirmed on 1.27.0.0).
 
 Frame layout (lobby and peer connections share it):
     [type:u8] [length:u16 big-endian = payload bytes] [payload]
@@ -71,10 +71,13 @@ class Msg:
     CREATE_MOD_GAME_SERVER = 51
     GET_MOD_GAME_SERVERS   = 52
     MOD_GAME_SERVERS_LIST  = 53
-    # --- added in 1.26.0.1 (TapTap login) ---
-    # Same layout as START_LOGIN except the first string is str16 (credential, <=1024
-    # bytes) instead of str8 (user name).
-    START_TAP_LOGIN        = 54
+    # 54 was START_TAP_LOGIN (1.26.0.1, TapTap login), retired with 1.26 support.
+    # --- added in 1.27.0.0 (Steam Web Ticket login) ---
+    # 1.27 replaced TapTap with a Steam auth-ticket exchange. The message carries the
+    # SteamID and a fixed 64-byte credential instead of a string pair. Layout:
+    #   u16 | u64 steamID | u32 | u16 (lobbyPort ^ connKey) | blob(64) credential |
+    #   str8 persona name
+    START_STEAM_LOGIN      = 55
 
 
 NAME = {v: k for k, v in vars(Msg).items() if isinstance(v, int) and not k.startswith("_")}

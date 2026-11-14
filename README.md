@@ -13,10 +13,10 @@ memory, and that's all it keeps.
 | Folder | What it is |
 |---|---|
 | [`server/`](server) | The lobby + UDP relay. Python 3.9+, standard library only |
-| [`tap-auth/`](tap-auth) | A Cloudflare Worker, **only needed for the Steam 1.26.0.1 build** (its login goes through TapTap OAuth) |
+| [`tap-auth/`](tap-auth) | A Cloudflare Worker, **only needed for the Steam 1.27.0.0 build** (its login goes through a Steam Web Ticket exchange) |
 | [`launcher/`](launcher) | A small Windows (WPF) launcher: pick a server and your mods (optionally more than 10), start the game |
 
-Tested with the DRM-free 1.25.9.5 build, Steam 1.25.5.6 and Steam 1.26.0.1.
+Tested with the DRM-free 1.25.9.5 build, Steam 1.25.5.6 and Steam 1.27.0.0.
 
 ## Download
 
@@ -83,32 +83,34 @@ TCP/UDP.
 | `LOBBY_PORT` / `RELAY_PORT` | `4549` | TCP lobby port / UDP relay main port |
 | `RELAY_PORT_RANGE` | `4550-4999` | Pair ports; a 4-player game uses 6, a 6-player game 15 |
 | `LOBBY_PASSWORD` | empty | Optional shared password for 1.25.x clients (any name + this password) |
-| `ALLOW_TAPTAP` | `1` | Let 1.26 (TapTap login) clients in. They can't send a password |
+| `ALLOW_STEAM` | `1` | Let 1.27 (Steam login) clients in. They can't send a password |
 | `LOG_IPS` | `0` | `0` masks player IPs in the log as `a.b.x.x` |
 | `LOBBY_VERBOSE` | `0` | Hexdump every lobby frame (protocol debugging) |
 
-### Supporting the Steam 1.26.0.1 build
+### Supporting the Steam 1.27.0.0 build
 
-The 1.26.0.1 update replaced the name/password login with TapTap OAuth, so those
-players need an *Auth URL* in the launcher. The auth endpoint only hands out a player
-name and works with any lobby server. The launcher fills in the shared one,
-`https://tl2-auth.chr.moe`, for every new server, so a self-hosted lobby works for 1.26
-players without extra setup.
+1.27.0.0 logs into the lobby through a Steam Web Ticket exchange instead of a name and
+password, so those players need an *Auth URL* in the launcher pointing at a
+[`tap-auth/`](tap-auth) worker. The game asks the auth endpoint which lobby to use and
+checks the answer against the launcher's settings, so **the worker must be paired with your
+lobby**: deploy your own `tap-auth` with its `LOBBY_HOST` / `LOBBY_PORT` set to your server,
+and use that URL. The shared `tl2-auth.chr.moe` can't do this for an arbitrary self-hosted
+lobby. 1.27 also needs Steam running and the account to own the game (the game gets a real
+Steam ticket; the worker just doesn't check it).
 
-If you'd rather not depend on it, deploy [`tap-auth/`](tap-auth) to your own Cloudflare
-account and have players use that URL instead. It can be at most 26 characters
-(`https://` plus a domain of up to 18 characters). The tap-auth README explains why.
+A self-deployed Auth URL can be at most 34 characters (`https://` plus a domain). The
+tap-auth README explains why.
+
+> Earlier Steam builds: 1.25.5.6 uses the classic name/password login (no Auth URL needed).
+> The 1.26.0.1 TapTap login has been retired and is no longer supported.
 
 ## Connect as a player
 
 **With the launcher** (`launcher/`): add the server's host, select it, tick your mods,
-then click **Launch game**. 1.26.0.1 players have to launch through it.
+then click **Launch game**. 1.27.0.0 players have to launch through it.
 
-On 1.26 with one of your servers selected, the game's TapTap login box becomes a Mikuro one
-for that session: the button signs in through the server's Auth URL, no TapTap account needed.
-The online game list also shows which server you are on.
-
-<img src="docs/mikuro-login.png" alt="The login box on 1.26 when started from the launcher" width="360">
+On 1.27 with one of your servers selected, the Steam sign-in goes through that server's Auth
+URL, no change to the game on disk.
 
 The launcher ships with two public servers run by the author, **Mikuro Australia** and
 **Mikuro US**. Those run the full edition of the lobby, not this lite build, and keep
@@ -150,25 +152,21 @@ both launcher variants and publishes a GitHub Release.
   no files. Logs go to stdout / the systemd journal, with IPs masked by default. It makes
   no outbound connections unless you set `RELAY_IP=public`.
 - **tap-auth**, as shipped here, has no database and logs nothing (Workers observability
-  is off in `wrangler.jsonc`). A player's name lives in a cookie in their own browser. The
-  shared instance at `tl2-auth.chr.moe` is operated by the author; deploy your own if you
-  want full control.
+  is off in `wrangler.jsonc`). It doesn't check the Steam ticket and stores nothing about
+  players. The shared instance at `tl2-auth.chr.moe` is operated by the author; deploy your
+  own if you want full control.
 - **The launcher** only edits `local_settings.txt` and `modlauncher.sch`, writes
   `steam_appid.txt` for Steam builds, and keeps its own settings in `%APPDATA%\TL2LobbyLauncher`.
-  On 1.26 with a custom server it also swaps a few entries in `PAKS\DATA.PAK` for the length of
-  one game session (the TapTap login notice, its Chinese translations, and a "Server: host" line
-  in the game list). The game checks `DATA.PAK` against a sampled hash that includes its length,
-  so the new entries are written inside the file, never appended. The overwritten bytes are
-  backed up in `PAKS\TL2LobbyLauncher-restore\`, and both files are put back byte-for-byte when
-  the game exits, which also deletes that folder. If you ever see it with the game closed, start
-  the launcher once (or use Steam's *Verify integrity of game files*).
+  For a 1.27 Steam build with a custom server it also rewrites the game's built-in Steam auth
+  base in the running process's memory for that session, so login goes to that server's Auth
+  URL. It is overwritten in place in `.rdata`; the exe file on disk is never modified.
 - The lobby protocol is **plain TCP**, a limit of the game itself. `LOBBY_PASSWORD` uses
   the client's built-in challenge-response, so the password never crosses the wire. Its
   hash chain is weak, though (20 rounds of SHA-256), and anyone who can sniff the traffic
   can brute-force a short password offline. Use a long random one, and treat it as
   "keeps strangers out", not strong authentication.
-- tap-auth is **not** an access gate. The lobby accepts whatever name a 1.26 client
-  presents. Turn 1.26 clients off with `ALLOW_TAPTAP=0` if that matters to you.
+- tap-auth is **not** an access gate. The lobby accepts whatever name a 1.27 client
+  presents. Turn 1.27 clients off with `ALLOW_STEAM=0` if that matters to you.
 - Relay keys are random 32-bit values, and mesh connections are only arranged between
   players in the same live game.
 

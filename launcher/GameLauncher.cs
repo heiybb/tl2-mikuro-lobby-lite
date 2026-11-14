@@ -8,20 +8,21 @@ namespace TL2LobbyLauncher;
 /// <summary>
 /// Starts the game, optionally with two in-memory patches. The exe file on disk is never modified.
 ///
-/// 1. TapTap auth (1.26 only): rewrites the two TapTap OAuth URL strings.
+/// 1. Online auth (1.27): rewrites the Steam auth base (a wide string in .rdata) to the
+///    server's Auth URL, so login goes through that server's auth Worker.
 /// 2. Mod limit: the mod-activation routine does `mov eax,0Ah` and refuses any parent mod past
 ///    the 10th ("Unable to activate mod because there are already 10 parent mods active.").
 ///    Both of its checks compare against that one immediate, so changing 0x0A to 0x64 lifts the
-///    limit to 100. The signature below is unique in 1.25.9.5, Steam 1.25.5.6 and 1.26.0.1:
+///    limit to 100. The signature below is unique in 1.25.9.5, Steam 1.25.5.6, 1.26.0.1 and 1.27.0.0:
 ///        B8 0A 00 00 00 39 ?? 1C 73 ?? 39 ?? 84 00 00 00 73 ?? 8B
 ///        mov eax,0Ah   cmp [+1Ch]  jae  cmp [+84h]        jae  mov
 ///    The limit is checked once, early in data loading.
 ///    - 1.25.x: .text is plaintext while suspended, so the byte is written before the game
 ///      runs a single instruction.
-///    - 1.26: the Steam stub keeps .text encrypted until it runs, so after resuming we scan
-///      until the decrypted signature shows up, suspend the whole process, write the byte and
-///      resume. The stub decrypts at the very start; the data-loading thread starts only after
-///      the renderer (d3d9.dll) is loaded, which is much later.
+///    - 1.27 (SteamStub): the stub keeps .text encrypted until it runs, so after resuming we
+///      scan until the decrypted signature shows up, suspend the whole process, write the byte
+///      and resume. The stub decrypts at the very start; the data-loading thread starts only
+///      after the renderer (d3d9.dll) is loaded, which is much later.
 ///
 /// Timing: with CREATE_SUSPENDED the image is mapped but not one game instruction has run.
 /// The strings live in .rdata, which the Steam stub does not encrypt, so the plaintext is
@@ -31,16 +32,14 @@ namespace TL2LobbyLauncher;
 /// slots that hold the pointers are relocation targets, and writing them would race the
 /// loader's ASLR fix-ups. String bytes are never relocated, so an in-place overwrite needs
 /// no allocation and has no race. The cost is a length limit: the new URL must fit in the
-/// shortest original (26 bytes).
+/// original's footprint.
 /// </summary>
 public static class GameLauncher
 {
-    /// <summary>The built-in 1.26.0.1 TapTap hosts: the token endpoint and the authorize page.</summary>
-    private static readonly string[] TapTapUrls =
-    {
-        "https://accounts.tapapis.com",
-        "https://www.taptapauth.com",
-    };
+    /// <summary>The built-in 1.27.0.0 Steam auth base, a wide (UTF-16LE) string in .rdata. The
+    /// game appends "capabilities" and "steam/exchange" to it, so the replacement must end in
+    /// '/' and fit in the original's 35 wide chars.</summary>
+    private const string SteamAuthBaseUrl = "https://tl2-auth.xdgtw.com/auth/v1/";
 
     private static readonly int?[] CapSig =
     {
@@ -51,12 +50,12 @@ public static class GameLauncher
 
     public enum CapResult { NotRequested, Raised, NotFound }
 
-    /// <param name="CapMs">1.26 only: ms from resume until the limit was patched (diagnostics).</param>
+    /// <param name="CapMs">1.27 only: ms from resume until the limit was patched (diagnostics).</param>
     /// <param name="ProcessId">The game's process id, 0 if it did not start.</param>
     public readonly record struct Result(bool Started, string? Error, int UrlsReplaced, CapResult Cap, long CapMs = -1,
                                          int ProcessId = 0);
 
-    /// <summary>Blocking (the 1.26 limit patch waits for the stub to decrypt, normally well under
+    /// <summary>Blocking (the 1.27 limit patch waits for the stub to decrypt, normally well under
     /// a second); call it off the UI thread.</summary>
     public static Result Start(string exe, string arguments, string? authUrl, bool raiseCap, bool packed)
     {
@@ -91,7 +90,7 @@ public static class GameLauncher
             if (!haveBase) error = "could not read the image base";
             else
             {
-                if (authUrl != null) replaced = RepointTapTap(pi.hProcess, exe, imageBase, authUrl);
+                if (authUrl != null) replaced = RepointSteamAuth(pi.hProcess, exe, imageBase, authUrl);
                 if (raiseCap && !packed && PatchCapNow(pi.hProcess, exe, imageBase)) cap = CapResult.Raised;
             }
         }
@@ -126,7 +125,7 @@ public static class GameLauncher
         return idx >= 0 && WriteCapByte(hProc, start + idx + 1);
     }
 
-    /// <summary>1.26: rescan .text until the stub has decrypted it, then patch with the process
+    /// <summary>1.27: rescan .text until the stub has decrypted it, then patch with the process
     /// suspended so no game thread runs between finding the site and writing it.</summary>
     private static bool PatchCapAfterDecrypt(IntPtr hProc, string exe, uint imageBase)
     {
@@ -179,7 +178,7 @@ public static class GameLauncher
         return -1;
     }
 
-    // ---- TapTap ----
+    // ---- Steam auth ----
 
     /// <summary>32-bit PEB ImageBaseAddress (offset 8): valid while suspended, correct under ASLR.</summary>
     private static bool TryReadImageBase(IntPtr hProc, out uint imageBase)
@@ -195,44 +194,44 @@ public static class GameLauncher
         return true;
     }
 
-    private static int RepointTapTap(IntPtr hProc, string exe, uint imageBase, string newUrl)
+    /// <summary>1.27: overwrite the Steam auth base (a wide string in .rdata) in place. The game
+    /// builds "{base}capabilities" and "{base}steam/exchange", so the replacement is the server's
+    /// Auth URL plus a trailing '/'. .rdata is plaintext (the SteamStub only encrypts .text) and
+    /// not relocated, so this works while the process is still suspended.</summary>
+    private static int RepointSteamAuth(IntPtr hProc, string exe, uint imageBase, string authUrl)
     {
         if (!TryGetSection(exe, ".rdata", out uint rva, out uint size)) return 0;
         IntPtr start = (IntPtr)((long)imageBase + rva);
         var data = new byte[size];
         if (!ReadProcessMemory(hProc, start, data, (int)size, out IntPtr read) || (long)read <= 0) return 0;
 
-        byte[] newBytes = Encoding.ASCII.GetBytes(newUrl);
-        int replaced = 0;
-        foreach (string original in TapTapUrls)
-        {
-            byte[] pat = Encoding.ASCII.GetBytes(original);
-            if (newBytes.Length > pat.Length) continue;
-            int idx = FindString(data, (int)read, pat);
-            if (idx < 0) continue;
+        string newUrl = authUrl.EndsWith("/", StringComparison.Ordinal) ? authUrl : authUrl + "/";
+        byte[] newBytes = Encoding.Unicode.GetBytes(newUrl);          // UTF-16LE
+        byte[] pat = Encoding.Unicode.GetBytes(SteamAuthBaseUrl);
+        if (newBytes.Length > pat.Length) return 0;                   // must fit the original slot
+        int idx = FindWideString(data, (int)read, pat);
+        if (idx < 0) return 0;
 
-            // new URL, then NUL through the original's terminator; never past its own footprint
-            var payload = new byte[pat.Length + 1];
-            Array.Copy(newBytes, payload, newBytes.Length);
-            IntPtr target = start + idx;
-            if (!VirtualProtectEx(hProc, target, (IntPtr)payload.Length, PAGE_READWRITE, out uint old)) continue;
-            bool ok = WriteProcessMemory(hProc, target, payload, payload.Length, out _);
-            VirtualProtectEx(hProc, target, (IntPtr)payload.Length, old, out _);
-            if (ok) replaced++;
-        }
-        return replaced;
+        // new URL, then a wide NUL through the original's terminator; never past its footprint
+        var payload = new byte[pat.Length + 2];
+        Array.Copy(newBytes, payload, newBytes.Length);
+        IntPtr target = start + idx;
+        if (!VirtualProtectEx(hProc, target, (IntPtr)payload.Length, PAGE_READWRITE, out uint old)) return 0;
+        bool ok = WriteProcessMemory(hProc, target, payload, payload.Length, out _);
+        VirtualProtectEx(hProc, target, (IntPtr)payload.Length, old, out _);
+        return ok ? 1 : 0;
     }
 
-    /// <summary>A whole NUL-terminated string starting on a NUL boundary, never a substring.</summary>
-    private static int FindString(byte[] data, int length, byte[] pat)
+    /// <summary>A whole wide (UTF-16LE) NUL-terminated string on a 2-byte boundary.</summary>
+    private static int FindWideString(byte[] data, int length, byte[] pat)
     {
-        int last = length - pat.Length - 1;
-        for (int i = 0; i <= last; i++)
+        int last = length - pat.Length - 2;
+        for (int i = 0; i <= last; i += 2)
         {
-            if (i > 0 && data[i - 1] != 0) continue;
+            if (i >= 2 && (data[i - 2] != 0 || data[i - 1] != 0)) continue;
             bool ok = true;
             for (int j = 0; j < pat.Length && ok; j++) ok = data[i + j] == pat[j];
-            if (ok && data[i + pat.Length] == 0) return i;
+            if (ok && data[i + pat.Length] == 0 && data[i + pat.Length + 1] == 0) return i;
         }
         return -1;
     }
