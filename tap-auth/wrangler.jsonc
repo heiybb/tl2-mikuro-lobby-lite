@@ -4,23 +4,30 @@
 	"compatibility_date": "2026-09-01",
 	"main": "src/index.ts",
 
-	// Serve it on a custom domain in your own Cloudflare zone. The full URL
-	// "https://<domain>" must be at most 34 characters (the launcher overwrites the
-	// game's built-in Steam auth base in place and appends "/"; that slot is 35 chars).
-	// workers.dev hostnames are almost always too long.
+	// Serve it on a custom domain in your own Cloudflare zone. Each Auth URL
+	// ("https://<domain>" or "https://<domain>/<prefix>") must be at most 34 characters (the
+	// launcher overwrites the game's built-in Steam auth base in place and appends "/"; that
+	// slot is 35 chars). workers.dev hostnames are almost always too long.
 	"workers_dev": false,
 	"preview_urls": false,
-	"routes": [{ "pattern": "auth.example.net", "custom_domain": true }],
+	"routes": [{ "pattern": "steam-auth.chr.moe", "custom_domain": true }],
 
 	// Off by default: nothing about players is logged. Turn on only while debugging.
 	"observability": { "enabled": false },
 
-	// The game's capabilities check compares these against its own LOBBYHOST_XD / LOBBYPORT_XD,
-	// so LOBBY_HOST / LOBBY_PORT MUST match the lobby this worker is paired with (the server
-	// whose Auth URL points here). ENVIRONMENT must match the client's STEAM_AUTH_ENVIRONMENT
-	// (default "production").
+	// The game's capabilities check compares the lobby host/port this worker returns against its
+	// own LOBBYHOST_XD / LOBBYPORT_XD, so each Auth URL must be paired with exactly one lobby:
+	//   LOBBIES     path prefix -> "host" or "host:port". Auth URL "https://<domain>/au" serves
+	//               the "au" lobby. Use the same Host / Port the launcher has for that server.
+	//   LOBBY_HOST  the lobby for the bare root (Auth URL "https://<domain>"); optional.
+	// ENVIRONMENT must match the client's STEAM_AUTH_ENVIRONMENT (default "production").
 	"vars": {
-		"LOBBY_HOST": "lobby.example.net",
+		"LOBBIES": {
+			"au": "tl2-mikuro-server-au.chr.moe:4549",
+			"us": "tl2-mikuro-server-us.chr.moe:4549",
+			"cn": "tl2-mikuro-server-cn.chr.moe:4549"
+		},
+		"LOBBY_HOST": "tl2-mikuro-server-au.chr.moe",
 		"LOBBY_PORT": "4549",
 		"ENVIRONMENT": "production"
 	}

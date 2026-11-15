@@ -21,43 +21,59 @@ comes from their Steam persona, which the game sends straight to the lobby).
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/capabilities` | returns `TL2AUTH\|1\|200710\|<env>\|<lobby host>\|<lobby port>\|1\|0\|` |
-| POST | `/steam/exchange` | returns `TL2GRANT\|1\|<connection key>\|<credential>\|` |
+| GET | `/<prefix>/capabilities` | returns `TL2AUTH\|1\|200710\|<env>\|<lobby host>\|<lobby port>\|1\|0\|` |
+| POST | `/<prefix>/steam/exchange` | returns `TL2GRANT\|1\|<connection key>\|<credential>\|` |
 
-Both are also served under an `/auth/v1/` prefix, so either base URL shape works.
+`<prefix>` is one of the keys in `LOBBIES` and picks the lobby. Without a prefix
+(`/capabilities`) the worker answers for `LOBBY_HOST` / `LOBBY_PORT`. Any other path is a 404.
 
-### The worker must be paired with its lobby
+### Each Auth URL is paired with one lobby
 
 The `capabilities` reply carries the lobby host and port, and the game checks them against the
-`LOBBYHOST_XD` / `LOBBYPORT_XD` the launcher wrote for the selected server. So **`LOBBY_HOST` /
-`LOBBY_PORT` in `wrangler.jsonc` must exactly match the lobby this worker's Auth URL is paired
-with** (same string the server's `host` uses, same port), or the game abandons login before it
-reaches the lobby. The shared `tl2-auth.chr.moe` therefore cannot serve an arbitrary
-self-hosted lobby — deploy your own worker per lobby.
+`LOBBYHOST_XD` / `LOBBYPORT_XD` the launcher wrote for the selected server. `capabilities` is a
+bare GET, so the only thing that tells the worker which lobby the player wants is the Auth URL
+itself. **Each Auth URL is therefore paired with exactly one lobby**, and the host/port for it
+must match that server's Host / Port in the launcher exactly, or the game abandons login before
+it reaches the lobby.
+
+One worker can serve several lobbies, one per path:
+
+```jsonc
+"vars": {
+  "LOBBIES": {
+    "au": "lobby-au.example.net:4549",   // Auth URL https://auth.example.net/au
+    "us": "lobby-us.example.net"         // Auth URL https://auth.example.net/us (port 4549)
+  },
+  "LOBBY_HOST": "lobby-au.example.net", // optional: Auth URL https://auth.example.net
+  "LOBBY_PORT": "4549"
+}
+```
+
+The author's shared worker only lists the author's servers; a self-hosted lobby needs its own.
 
 The game also needs Steam running and the account to own Torchlight II: it gets a real Steam
 auth ticket before calling `steam/exchange`. The worker just doesn't check the ticket.
 
 ## Deploy
 
-You need a domain in your Cloudflare account. **`https://<domain>` can be at most 34
-characters**: the launcher overwrites the game's Steam auth base in place and appends `/`, and
-that slot is 35 characters. For example, `auth.example.net` fits easily. `*.workers.dev`
-hostnames are almost always too long.
+You need a domain in your Cloudflare account. **Each Auth URL (`https://<domain>` plus an
+optional `/<prefix>`) can be at most 34 characters**: the launcher overwrites the game's Steam
+auth base in place and appends `/`, and that slot is 35 characters. For example,
+`https://auth.example.net/au` is 27. `*.workers.dev` hostnames are almost always too long.
 
 1. Put your domain in `wrangler.jsonc` → `routes[0].pattern`.
-2. Set `vars.LOBBY_HOST` / `vars.LOBBY_PORT` in `wrangler.jsonc` to the lobby this worker is
-   paired with (see "The worker must be paired with its lobby" above). Leave `ENVIRONMENT` as
-   `production`.
+2. List your lobbies in `vars.LOBBIES` (and/or set `vars.LOBBY_HOST` / `vars.LOBBY_PORT` for
+   the bare domain), see "Each Auth URL is paired with one lobby" above. Leave `ENVIRONMENT`
+   as `production`.
 3. Deploy:
    ```bash
    bun install            # or npm install
    bunx wrangler login
    bun run deploy
    ```
-4. Check it: `https://<domain>/capabilities` returns the pipe-delimited line with your lobby
-   host/port.
-5. Players enter `https://<domain>` as the **Auth URL** of your server in the launcher.
+4. Check it: `https://<domain>/<prefix>/capabilities` returns the pipe-delimited line with
+   that lobby's host/port.
+5. Players enter `https://<domain>/<prefix>` as the **Auth URL** of that server in the launcher.
    If you ship a `servers.json` next to the launcher, put it in there.
 
 Plain HTTP won't work. The game forces TLS on both requests, so the certificate must be valid.

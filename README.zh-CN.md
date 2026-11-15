@@ -85,11 +85,12 @@ python3 lobby_server.py                # 直接前台跑
 
 1.27.0.0 把用户名密码登录换成了 Steam Web Ticket 交换,这一版的玩家需要在启动器里填「认证地址」
 (指向一个 [`tap-auth/`](tap-auth) worker)。游戏会向认证端点要「该连哪台大厅」,再拿返回值和启动器
-写的设置核对,所以 **worker 必须和你的大厅配对**:自己部署一份 `tap-auth`,把它的 `LOBBY_HOST` /
-`LOBBY_PORT` 设成你的服务器,再把这个地址给玩家。公共的 `tl2-auth.chr.moe` 做不到为任意自建大厅服务。
+写的设置核对,所以 **每个认证地址只能对应一个大厅**:自己部署一份 `tap-auth`,把你的服务器写进它的
+`LOBBIES`(或设 `LOBBY_HOST` / `LOBBY_PORT`),再把地址给玩家。一个 worker 可以按路径服务多个大厅
+(`https://<域名>/au`、`https://<域名>/us`)。作者的公共 worker 只认作者自己的服务器。
 1.27 还要求 Steam 在跑、账号拥有游戏(票据是游戏自己找 Steam 要的,worker 只是不校验它)。
 
-自己部署的认证地址最多 34 个字符(`https://` 加域名),原因见 tap-auth 的 README。
+认证地址最多 34 个字符(`https://`、域名,加上可选的路径),原因见 tap-auth 的 README。
 
 > 更早的 Steam 版:1.25.5.6 用经典用户名密码登录(不用认证地址);1.26.0.1 的 TapTap 登录已停止支持。
 
@@ -135,7 +136,7 @@ dotnet publish launcher -c Release -f net10.0-windows -r win-x64 --self-containe
   systemd journal,IP 默认打码;除非设了 `RELAY_IP=public`,不发起任何外部连接。
 - **tap-auth**:本仓库里的版本没有数据库,不记日志(`wrangler.jsonc` 里关了 Workers observability),
   不校验 Steam 票据、也不存玩家任何信息(玩家名来自 Steam 角色名,由游戏直接发给大厅)。公共实例
-  `tl2-auth.chr.moe` 由作者运营;想完全自己掌控就自己部署一份。
+  `steam-auth.chr.moe` 由作者运营;想完全自己掌控就自己部署一份。
 - **启动器**:只改 `local_settings.txt` 和 `modlauncher.sch`,Steam 版写一个 `steam_appid.txt`,
   自己的设置放在 `%APPDATA%\TL2LobbyLauncher`。
   1.27 连自建服务器时,会在这一局游戏期间把游戏内置的 Steam 认证根地址在进程内存里改写成该服务器的

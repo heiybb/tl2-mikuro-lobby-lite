@@ -10,7 +10,8 @@ public sealed class ServerEntry
     public string Host { get; set; } = "";
     public int Port { get; set; } = LobbySettings.DefaultPort;
 
-    /// <summary>1.27.0.0 only: the tap-auth Worker, e.g. "https://auth.example.net". Empty = none.</summary>
+    /// <summary>1.27.0.0 only: the tap-auth Worker paired with this lobby, e.g.
+    /// "https://auth.example.net" or "https://auth.example.net/au". Empty = none.</summary>
     public string AuthUrl { get; set; } = "";
 
     [JsonIgnore]
@@ -38,19 +39,19 @@ public sealed class AppConfig
     /// are added once per revision, so a player who deletes one doesn't get it back.</summary>
     public int DefaultsRevision { get; set; }
 
-    /// <summary>The author's shared auth Worker (tap-auth/), used by the public servers below.
-    /// New servers get it as a default prefill, but a self-hosted 1.27 lobby needs its own
-    /// paired worker (see tap-auth/README): change the Auth URL when you add your server.</summary>
-    public const string DefaultAuthUrl = "https://tl2-auth.chr.moe";
-
     /// <summary>Public servers run by the project author (they run the full edition of the
-    /// lobby, not this lite one; see README).</summary>
-    private const int DefaultsRev = 1;
+    /// lobby, not this lite one; see README). They share one auth Worker (tap-auth/), each on
+    /// its own path, because a worker path is paired with exactly one lobby.</summary>
+    private const int DefaultsRev = 2;
     private static readonly ServerEntry[] Defaults =
     {
-        new() { Name = "Mikuro Australia", Host = "tl2-mikuro-server-au.chr.moe", AuthUrl = DefaultAuthUrl },
-        new() { Name = "Mikuro US", Host = "tl2-mikuro-server-us.chr.moe", AuthUrl = DefaultAuthUrl },
+        new() { Name = "Mikuro Australia", Host = "tl2-mikuro-server-au.chr.moe", AuthUrl = "https://steam-auth.chr.moe/au" },
+        new() { Name = "Mikuro US", Host = "tl2-mikuro-server-us.chr.moe", AuthUrl = "https://steam-auth.chr.moe/us" },
     };
+
+    /// <summary>The shared worker's old address (no longer resolves). Revision 2 moves the
+    /// default servers off it.</summary>
+    private const string RetiredAuthUrl = "https://tl2-auth.chr.moe";
 
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -80,8 +81,20 @@ public sealed class AppConfig
         if (cfg.DefaultsRevision < DefaultsRev)
         {
             foreach (var d in Defaults)
-                if (!cfg.Servers.Any(x => string.Equals(x.Host, d.Host, StringComparison.OrdinalIgnoreCase)))
-                    cfg.Servers.Add(new ServerEntry { Name = d.Name, Host = d.Host, Port = d.Port, AuthUrl = d.AuthUrl });
+            {
+                var have = cfg.Servers.FirstOrDefault(x => string.Equals(x.Host, d.Host, StringComparison.OrdinalIgnoreCase));
+                if (have == null)
+                {
+                    // revision 1 added the defaults; a player who deleted one since keeps it deleted
+                    if (cfg.DefaultsRevision < 1)
+                        cfg.Servers.Add(new ServerEntry { Name = d.Name, Host = d.Host, Port = d.Port, AuthUrl = d.AuthUrl });
+                }
+                else if (string.IsNullOrEmpty(have.AuthUrl)
+                         || string.Equals(have.AuthUrl, RetiredAuthUrl, StringComparison.OrdinalIgnoreCase))
+                {
+                    have.AuthUrl = d.AuthUrl;   // revision 2: the retired shared address -> this server's path
+                }
+            }
             cfg.DefaultsRevision = DefaultsRev;
             cfg.Save();
         }
@@ -137,10 +150,15 @@ public static class ServerValidation
         !string.IsNullOrWhiteSpace(h) && h.Length <= 253
         && Uri.CheckHostName(h) is UriHostNameType.Dns or UriHostNameType.IPv4;
 
+    /// <summary>"https://host" or "https://host/path" (path segments of letters, digits, "-" and
+    /// "_"; one worker serves several lobbies on different paths). No port, query or trailing slash.</summary>
     public static bool IsAuthUrl(string u)
     {
         if (u.Length > MaxAuthUrlLength || u.Any(c => c > 0x7E || c < 0x21)) return false;
         if (!u.StartsWith("https://", StringComparison.Ordinal)) return false;
-        return IsHost(u.Substring("https://".Length));   // scheme + host only: no path, port or trailing slash
+        string[] parts = u.Substring("https://".Length).Split('/');
+        if (!IsHost(parts[0])) return false;
+        return parts.Skip(1).All(seg => seg.Length > 0
+            && seg.All(c => c is (>= 'a' and <= 'z') or (>= 'A' and <= 'Z') or (>= '0' and <= '9') or '-' or '_'));
     }
 }

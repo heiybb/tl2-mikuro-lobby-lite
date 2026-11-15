@@ -27,7 +27,7 @@ public partial class ServerDialog : Window
         txtName.Text = original?.Name ?? "";
         txtHost.Text = original?.Host ?? "";
         txtPort.Text = (original?.Port ?? LobbySettings.DefaultPort).ToString();
-        txtAuth.Text = original?.AuthUrl ?? AppConfig.DefaultAuthUrl;
+        txtAuth.Text = original?.AuthUrl ?? "";   // a new lobby needs its own paired worker path
         Loaded += (_, _) => txtName.Focus();
     }
 

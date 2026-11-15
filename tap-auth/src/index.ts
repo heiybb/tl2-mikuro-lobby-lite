@@ -15,8 +15,9 @@
 //   - capabilities is parsed into exactly 8 "|"-separated fields with a trailing "|":
 //       TL2AUTH | "1" | <appid> | <environment> | <lobby host> | <lobby port> | "1" | "0"
 //     The client checks fields 0-5 against its own appid / STEAM_AUTH_ENVIRONMENT /
-//     LOBBYHOST_XD / LOBBYPORT_XD, so they MUST match the paired lobby, and field 6 must be
-//     "1" or the login is abandoned before the exchange. Field 7 is an extra flag ("0" is fine).
+//     LOBBYHOST_XD / LOBBYPORT_XD, so they MUST match the lobby the player is connecting to,
+//     and field 6 must be "1" or the login is abandoned before the exchange. Field 7 is an
+//     extra flag ("0" is fine).
 //   - steam/exchange returns 4 fields: "TL2GRANT" | "1" | <connection_key echoed back> |
 //     <credential>. The credential must be an even-length hex string of >= 64 chars (the
 //     client copies its first 64 bytes verbatim into the lobby message); its content is not
@@ -24,20 +25,37 @@
 //   - The Steam ticket in the POST body is NOT checked. This is not an access gate: anyone can
 //     talk to the lobby directly with any name. Use the lobby's own options for access control.
 //
+// One worker can serve several lobbies. capabilities is a bare GET, so the only thing that
+// tells the worker which lobby the player is heading for is the Auth URL itself: each lobby
+// gets its own path prefix ("https://auth.example.net/au" -> "/au/capabilities") listed in
+// LOBBIES, and the bare root ("https://auth.example.net") maps to LOBBY_HOST / LOBBY_PORT.
+//
 // No accounts, no storage and no logging. The player's name comes from their Steam persona
 // (the game puts it in the lobby message), not from here.
 
 interface Env {
-	// The capabilities check makes the client compare these against its own LOBBYHOST_XD /
-	// LOBBYPORT_XD, so they MUST match the lobby this worker is paired with (the same host/port
-	// the launcher writes for the server whose Auth URL points here). Set them in
-	// wrangler.jsonc -> vars for each deployment.
+	// Path prefix -> "host" or "host:port" of the lobby that prefix is paired with, e.g.
+	// { "au": "lobby-au.example.net", "us": "lobby-us.example.net:4549" }. The host/port must be
+	// exactly what the launcher writes for that server (its Host / Port), because the client
+	// compares them with its own LOBBYHOST_XD / LOBBYPORT_XD. Set in wrangler.jsonc -> vars
+	// (an object, or the same thing as a JSON string).
+	LOBBIES?: Record<string, string> | string;
+	// The lobby for the bare root (Auth URL with no path). Optional.
 	LOBBY_HOST?: string;
 	LOBBY_PORT?: string;
 	ENVIRONMENT?: string; // defaults to "production", matching the client's STEAM_AUTH_ENVIRONMENT
 }
 
+interface Lobby {
+	host: string;
+	port: string;
+}
+
 const APPID = "200710";
+const DEFAULT_PORT = "4549";
+
+// "/capabilities", "/au/capabilities", "/steam/exchange", "/au/steam/exchange"
+const ROUTE = /^\/(?:([A-Za-z0-9_-]{1,32})\/)?(capabilities|steam\/exchange)$/;
 
 function pipeLine(fields: string[], status = 200): Response {
 	return new Response(fields.join("|") + "|", {
@@ -50,12 +68,30 @@ function pipeLine(fields: string[], status = 200): Response {
 	});
 }
 
-function capabilitiesLine(env: Env): Response {
-	const host = env.LOBBY_HOST || "";
-	const port = env.LOBBY_PORT || "4549";
+function lobbyFor(prefix: string, env: Env): Lobby | null {
+	if (prefix === "") {
+		return env.LOBBY_HOST ? { host: env.LOBBY_HOST, port: env.LOBBY_PORT || DEFAULT_PORT } : null;
+	}
+	let map: Record<string, string> = {};
+	try {
+		map = typeof env.LOBBIES === "string" ? JSON.parse(env.LOBBIES) : env.LOBBIES || {};
+	} catch {
+		return null;
+	}
+	// own keys only, compared case-insensitively ("AU" and "au" are the same lobby)
+	const key = Object.keys(map).find(k => k.toLowerCase() === prefix.toLowerCase());
+	const value = key === undefined ? "" : String(map[key]).trim();
+	if (!value) return null;
+	const colon = value.lastIndexOf(":");
+	return colon > 0
+		? { host: value.slice(0, colon), port: value.slice(colon + 1) }
+		: { host: value, port: DEFAULT_PORT };
+}
+
+function capabilitiesLine(lobby: Lobby, env: Env): Response {
 	const environment = env.ENVIRONMENT || "production";
 	// field6 = "1" (login enabled) is required; field7 is a spare flag ("0").
-	return pipeLine(["TL2AUTH", "1", APPID, environment, host, port, "1", "0"]);
+	return pipeLine(["TL2AUTH", "1", APPID, environment, lobby.host, lobby.port, "1", "0"]);
 }
 
 async function steamExchange(req: Request): Promise<Response> {
@@ -73,17 +109,12 @@ async function steamExchange(req: Request): Promise<Response> {
 
 export default {
 	async fetch(req: Request, env: Env): Promise<Response> {
-		const url = new URL(req.url);
+		const m = ROUTE.exec(new URL(req.url).pathname);
+		const lobby = m ? lobbyFor(m[1] || "", env) : null;
+		if (!m || !lobby) return new Response("not found", { status: 404 });
 
-		// capabilities + Steam ticket exchange. Accept the endpoint at the repointed base root
-		// ("/capabilities") and under the official-style "/auth/v1/" prefix.
-		if (req.method === "GET" && /(^|\/)capabilities$/.test(url.pathname)) {
-			return capabilitiesLine(env);
-		}
-		if (req.method === "POST" && /(^|\/)steam\/exchange$/.test(url.pathname)) {
-			return steamExchange(req);
-		}
-
-		return new Response("not found", { status: 404 });
+		if (m[2] === "capabilities" && req.method === "GET") return capabilitiesLine(lobby, env);
+		if (m[2] === "steam/exchange" && req.method === "POST") return steamExchange(req);
+		return new Response("method not allowed", { status: 405 });
 	},
 };

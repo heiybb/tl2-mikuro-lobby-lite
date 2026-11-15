@@ -92,13 +92,14 @@ TCP/UDP.
 1.27.0.0 logs into the lobby through a Steam Web Ticket exchange instead of a name and
 password, so those players need an *Auth URL* in the launcher pointing at a
 [`tap-auth/`](tap-auth) worker. The game asks the auth endpoint which lobby to use and
-checks the answer against the launcher's settings, so **the worker must be paired with your
-lobby**: deploy your own `tap-auth` with its `LOBBY_HOST` / `LOBBY_PORT` set to your server,
-and use that URL. The shared `tl2-auth.chr.moe` can't do this for an arbitrary self-hosted
-lobby. 1.27 also needs Steam running and the account to own the game (the game gets a real
+checks the answer against the launcher's settings, so **each Auth URL must be paired with
+one lobby**: deploy your own `tap-auth`, list your server in its `LOBBIES` (or set
+`LOBBY_HOST` / `LOBBY_PORT`), and use that URL. One worker can serve several lobbies on
+different paths (`https://<domain>/au`, `https://<domain>/us`). The author's shared worker
+only knows the author's servers. 1.27 also needs Steam running and the account to own the game (the game gets a real
 Steam ticket; the worker just doesn't check it).
 
-A self-deployed Auth URL can be at most 34 characters (`https://` plus a domain). The
+An Auth URL can be at most 34 characters (`https://`, the domain and an optional path). The
 tap-auth README explains why.
 
 > Earlier Steam builds: 1.25.5.6 uses the classic name/password login (no Auth URL needed).
@@ -153,7 +154,7 @@ both launcher variants and publishes a GitHub Release.
   no outbound connections unless you set `RELAY_IP=public`.
 - **tap-auth**, as shipped here, has no database and logs nothing (Workers observability
   is off in `wrangler.jsonc`). It doesn't check the Steam ticket and stores nothing about
-  players. The shared instance at `tl2-auth.chr.moe` is operated by the author; deploy your
+  players. The shared instance at `steam-auth.chr.moe` is operated by the author; deploy your
   own if you want full control.
 - **The launcher** only edits `local_settings.txt` and `modlauncher.sch`, writes
   `steam_appid.txt` for Steam builds, and keeps its own settings in `%APPDATA%\TL2LobbyLauncher`.
