@@ -62,7 +62,7 @@ jobs:
             which is much larger but brings everything it needs.
 
             **Server operators:** `tl2-lobby-lite-server.zip` has the server; see README for setup.
-            The Cloudflare Worker for Steam 1.26.0.1 is in `tap-auth/` in the source.
+            The Cloudflare Worker for the Steam 1.27.0.0 login is in `tap-auth/` in the source.
 
       - uses: actions/upload-artifact@v4
         if: "!startsWith(github.ref, 'refs/tags/')"
