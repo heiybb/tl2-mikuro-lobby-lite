@@ -113,8 +113,9 @@ then click **Launch game**. 1.27.0.0 players have to launch through it.
 On 1.27 with one of your servers selected, the Steam sign-in goes through that server's Auth
 URL, no change to the game on disk.
 
-The launcher ships with two public servers run by the author, **Mikuro Australia** and
-**Mikuro US**. Those run the full edition of the lobby, not this lite build, and keep
+The launcher ships with three public servers run by the author, **Mikuro Australia**,
+**Mikuro US** and **Mikuro China (Guangzhou)**. The Guangzhou one has a small uplink (3 Mbps)
+and is meant for players in mainland China. They run the full edition of the lobby, not this lite build, and keep
 statistics for server administration (online list, per-player traffic, login log). If that
 matters to you, delete them and use your own server.
 

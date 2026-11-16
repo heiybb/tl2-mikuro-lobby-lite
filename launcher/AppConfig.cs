@@ -41,12 +41,16 @@ public sealed class AppConfig
 
     /// <summary>Public servers run by the project author (they run the full edition of the
     /// lobby, not this lite one; see README). They share one auth Worker (tap-auth/), each on
-    /// its own path, because a worker path is paired with exactly one lobby.</summary>
-    private const int DefaultsRev = 2;
-    private static readonly ServerEntry[] Defaults =
+    /// its own path, because a worker path is paired with exactly one lobby. AddedIn is the
+    /// revision that first ships the server: an existing config gets it once, on the first start
+    /// of a launcher with that revision.</summary>
+    private const int DefaultsRev = 3;
+    private static readonly (ServerEntry Server, int AddedIn)[] Defaults =
     {
-        new() { Name = "Mikuro Australia", Host = "tl2-mikuro-server-au.chr.moe", AuthUrl = "https://steam-auth.chr.moe/au" },
-        new() { Name = "Mikuro US", Host = "tl2-mikuro-server-us.chr.moe", AuthUrl = "https://steam-auth.chr.moe/us" },
+        (new() { Name = "Mikuro Australia", Host = "tl2-mikuro-server-au.chr.moe", AuthUrl = "https://steam-auth.chr.moe/au" }, 1),
+        (new() { Name = "Mikuro US", Host = "tl2-mikuro-server-us.chr.moe", AuthUrl = "https://steam-auth.chr.moe/us" }, 1),
+        // Guangzhou: small uplink (3 Mbps), meant for players in mainland China.
+        (new() { Name = "Mikuro China (Guangzhou)", Host = "tl2-mikuro-server-cn.chr.moe", AuthUrl = "https://steam-auth.chr.moe/cn" }, 3),
     };
 
     /// <summary>The shared worker's old address (no longer resolves). Revision 2 moves the
@@ -80,13 +84,13 @@ public sealed class AppConfig
 
         if (cfg.DefaultsRevision < DefaultsRev)
         {
-            foreach (var d in Defaults)
+            foreach (var (d, addedIn) in Defaults)
             {
                 var have = cfg.Servers.FirstOrDefault(x => string.Equals(x.Host, d.Host, StringComparison.OrdinalIgnoreCase));
                 if (have == null)
                 {
-                    // revision 1 added the defaults; a player who deleted one since keeps it deleted
-                    if (cfg.DefaultsRevision < 1)
+                    // added once, in the revision that ships it; a player who deleted it since keeps it deleted
+                    if (cfg.DefaultsRevision < addedIn)
                         cfg.Servers.Add(new ServerEntry { Name = d.Name, Host = d.Host, Port = d.Port, AuthUrl = d.AuthUrl });
                 }
                 else if (string.IsNullOrEmpty(have.AuthUrl)

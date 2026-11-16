@@ -34,7 +34,7 @@ will use.
 
 1. Put `TL2LobbyLauncher.exe` anywhere. Next to `Torchlight2.exe` is easiest. It also
    finds Steam installs on its own, and **Browse…** covers everything else.
-2. Pick one of the built-in public servers (Mikuro Australia / Mikuro US), or **Add**
+2. Pick one of the built-in public servers (Mikuro Australia / Mikuro US / Mikuro China (Guangzhou)), or **Add**
    your own: a name, the host (domain or IPv4) and the port (default 4549). The Auth URL
    (1.27 only) is the server's own `tap-auth` worker; for a self-hosted lobby it must be
    paired with that lobby (see `../tap-auth`).
