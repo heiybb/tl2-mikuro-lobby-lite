@@ -57,6 +57,11 @@ public sealed class AppConfig
     /// default servers off it.</summary>
     private const string RetiredAuthUrl = "https://tl2-auth.chr.moe";
 
+    /// <summary>Auth URLs this launcher has ever shipped; a saved one is cleared when the player
+    /// picks "official" even if they have since deleted that server.</summary>
+    public static IEnumerable<string> BuiltInAuthUrls =>
+        Defaults.Select(d => d.Server.AuthUrl).Concat(new[] { RetiredAuthUrl });
+
     private static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,

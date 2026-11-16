@@ -241,7 +241,8 @@ public partial class MainWindow : Window
             // The last applied host is included in case that server was edited or removed since.
             var known = _cfg.Servers.Select(x => x.Host).ToList();
             if (!string.IsNullOrEmpty(_cfg.SelectedHost)) known.Add(_cfg.SelectedHost);
-            LobbySettings.Apply(s, known);
+            var knownAuth = _cfg.Servers.Select(x => x.AuthUrl).Concat(AppConfig.BuiltInAuthUrls);
+            LobbySettings.Apply(s, known, knownAuth);
         }
         catch (Exception ex)
         {
