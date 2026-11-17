@@ -8,7 +8,8 @@ choose your mods, then start the game.
   as UTF-16LE with BOM, the same way the game writes the file.
 - **Official / don't change** removes only the lines this launcher wrote. A host you
   typed in by hand stays.
-- For the **Steam 1.27.0.0** build, when the server has an *Auth URL*, it starts the game
+- For the **Steam 1.27.x** builds (1.27.0.0, 32-bit; the 1.27.0.1 beta, x64), when the
+  server has an *Auth URL*, it starts the game
   suspended and rewrites the built-in Steam auth base (a wide string in `.rdata`) to that URL
   plus a trailing `/`, then lets the game run. The exe on disk is never modified. The Auth URL
   worker must be paired with the lobby (its `LOBBY_HOST`/`LOBBY_PORT`); see `../tap-auth`.
@@ -25,6 +26,7 @@ choose your mods, then start the game.
   - 1.25.x: while the game is still suspended, before it runs anything;
   - 1.27 (SteamStub): as soon as the stub has decrypted the code, with the game suspended
     for the write (about 0.6 s after start, well before the game's data loading begins).
+    The x64 beta has the same check with two separate immediates; both are raised.
   Steam Workshop subscriptions are not downloaded; use `.MOD` files already in the folder.
 
 It sends nothing anywhere. Its only network effect is the lobby address the game

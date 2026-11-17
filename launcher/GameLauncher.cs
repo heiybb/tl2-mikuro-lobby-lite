@@ -10,12 +10,17 @@ namespace TL2LobbyLauncher;
 ///
 /// 1. Online auth (1.27): rewrites the Steam auth base (a wide string in .rdata) to the
 ///    server's Auth URL, so login goes through that server's auth Worker.
-/// 2. Mod limit: the mod-activation routine does `mov eax,0Ah` and refuses any parent mod past
-///    the 10th ("Unable to activate mod because there are already 10 parent mods active.").
-///    Both of its checks compare against that one immediate, so changing 0x0A to 0x64 lifts the
-///    limit to 100. The signature below is unique in 1.25.9.5, Steam 1.25.5.6, 1.26.0.1 and 1.27.0.0:
+/// 2. Mod limit: the mod-activation routine refuses any parent mod past the 10th ("Unable to
+///    activate mod because there are already 10 parent mods active."). It checks two counts
+///    against 10; changing the 0x0A immediates to 0x64 lifts the limit to 100.
+///    - 32-bit builds: both checks compare against one `mov eax,0Ah`. Unique in 1.25.9.5,
+///      Steam 1.25.5.6, 1.26.0.1 and 1.27.0.0:
 ///        B8 0A 00 00 00 39 ?? 1C 73 ?? 39 ?? 84 00 00 00 73 ?? 8B
 ///        mov eax,0Ah   cmp [+1Ch]  jae  cmp [+84h]        jae  mov
+///    - x64 build (1.27 beta, 1.27.0.1): each check has its own imm8, so two bytes change.
+///      Unique in the decrypted .text (RVA 0x1D1EFFB):
+///        83 ?? 30 0A  0F 83 ?? ?? ?? ??  83 ?? C0 00 00 00 0A  0F 83
+///        cmp [+30h],0Ah  jae            cmp [+0C0h],0Ah        jae
 ///    The limit is checked once, early in data loading.
 ///    - 1.25.x: .text is plaintext while suspended, so the byte is written before the game
 ///      runs a single instruction.
@@ -41,10 +46,21 @@ public static class GameLauncher
     /// '/' and fit in the original's 35 wide chars.</summary>
     private const string SteamAuthBaseUrl = "https://tl2-auth.xdgtw.com/auth/v1/";
 
-    private static readonly int?[] CapSig =
+    /// <summary>A mod-limit check: its signature and the offsets of the 0x0A bytes to raise.</summary>
+    private sealed record CapSite(int?[] Sig, int[] Imms);
+
+    private static readonly CapSite[] CapSites =
     {
-        0xB8, 0x0A, 0x00, 0x00, 0x00, 0x39, null, 0x1C, 0x73, null,
-        0x39, null, 0x84, 0x00, 0x00, 0x00, 0x73, null, 0x8B,
+        new(new int?[]   // 32-bit: one shared immediate
+        {
+            0xB8, 0x0A, 0x00, 0x00, 0x00, 0x39, null, 0x1C, 0x73, null,
+            0x39, null, 0x84, 0x00, 0x00, 0x00, 0x73, null, 0x8B,
+        }, new[] { 1 }),
+        new(new int?[]   // x64: two imm8 compares
+        {
+            0x83, null, 0x30, 0x0A, 0x0F, 0x83, null, null, null, null,
+            0x83, null, 0xC0, 0x00, 0x00, 0x00, 0x0A, 0x0F, 0x83,
+        }, new[] { 3, 16 }),
     };
     private const byte RaisedCap = 0x64;   // 100
 
@@ -82,7 +98,7 @@ public static class GameLauncher
         string? error = null;
         var cap = raiseCap ? CapResult.NotFound : CapResult.NotRequested;
         long capMs = -1;
-        uint imageBase = 0;
+        ulong imageBase = 0;
         bool haveBase = false;
         try
         {
@@ -115,19 +131,19 @@ public static class GameLauncher
 
     // ---- mod limit ----
 
-    private static bool PatchCapNow(IntPtr hProc, string exe, uint imageBase)
+    private static bool PatchCapNow(IntPtr hProc, string exe, ulong imageBase)
     {
         if (!TryGetSection(exe, ".text", out uint rva, out uint size)) return false;
         IntPtr start = (IntPtr)((long)imageBase + rva);
         var code = new byte[size];
         if (!ReadProcessMemory(hProc, start, code, (int)size, out IntPtr read)) return false;
-        int idx = FindSig(code, (int)read);
-        return idx >= 0 && WriteCapByte(hProc, start + idx + 1);
+        var (site, idx) = FindCap(code, (int)read);
+        return site != null && WriteCapBytes(hProc, start + idx, site);
     }
 
     /// <summary>1.27: rescan .text until the stub has decrypted it, then patch with the process
     /// suspended so no game thread runs between finding the site and writing it.</summary>
-    private static bool PatchCapAfterDecrypt(IntPtr hProc, string exe, uint imageBase)
+    private static bool PatchCapAfterDecrypt(IntPtr hProc, string exe, ulong imageBase)
     {
         if (!TryGetSection(exe, ".text", out uint rva, out uint size)) return false;
         IntPtr start = (IntPtr)((long)imageBase + rva);
@@ -138,11 +154,11 @@ public static class GameLauncher
             if (WaitForSingleObject(hProc, 0) == 0) return false;          // game already exited
             if (ReadProcessMemory(hProc, start, code, (int)size, out IntPtr read))
             {
-                int idx = FindSig(code, (int)read);
-                if (idx >= 0)
+                var (site, idx) = FindCap(code, (int)read);
+                if (site != null)
                 {
-                    if (NtSuspendProcess(hProc) != 0) return WriteCapByte(hProc, start + idx + 1);
-                    try { return WriteCapByte(hProc, start + idx + 1); }
+                    if (NtSuspendProcess(hProc) != 0) return WriteCapBytes(hProc, start + idx, site);
+                    try { return WriteCapBytes(hProc, start + idx, site); }
                     finally { NtResumeProcess(hProc); }
                 }
             }
@@ -151,28 +167,46 @@ public static class GameLauncher
         return false;
     }
 
-    private static bool WriteCapByte(IntPtr hProc, IntPtr target)
+    /// <summary>Raise every immediate of a site. Each must read 0x0A (or already 0x64) first,
+    /// so a stale match never writes into the wrong code.</summary>
+    private static bool WriteCapBytes(IntPtr hProc, IntPtr siteStart, CapSite site)
     {
         var cur = new byte[1];
-        if (!ReadProcessMemory(hProc, target, cur, 1, out _)) return false;
-        if (cur[0] == RaisedCap) return true;
-        if (cur[0] != 0x0A) return false;
-        if (!VirtualProtectEx(hProc, target, (IntPtr)1, PAGE_EXECUTE_READWRITE, out uint old)) return false;
-        bool ok = WriteProcessMemory(hProc, target, new[] { RaisedCap }, 1, out _);
-        VirtualProtectEx(hProc, target, (IntPtr)1, old, out _);
-        FlushInstructionCache(hProc, target, (IntPtr)1);
+        foreach (int off in site.Imms)
+        {
+            if (!ReadProcessMemory(hProc, siteStart + off, cur, 1, out _)) return false;
+            if (cur[0] != 0x0A && cur[0] != RaisedCap) return false;
+        }
+        int span = site.Sig.Length;
+        if (!VirtualProtectEx(hProc, siteStart, (IntPtr)span, PAGE_EXECUTE_READWRITE, out uint old)) return false;
+        bool ok = true;
+        foreach (int off in site.Imms)
+            ok &= WriteProcessMemory(hProc, siteStart + off, new[] { RaisedCap }, 1, out _);
+        VirtualProtectEx(hProc, siteStart, (IntPtr)span, old, out _);
+        FlushInstructionCache(hProc, siteStart, (IntPtr)span);
         return ok;
     }
 
-    private static int FindSig(byte[] data, int length)
+    private static (CapSite? Site, int Index) FindCap(byte[] data, int length)
     {
-        int last = length - CapSig.Length;
+        foreach (var site in CapSites)
+        {
+            int idx = FindSig(site.Sig, data, length);
+            if (idx >= 0) return (site, idx);
+        }
+        return (null, -1);
+    }
+
+    private static int FindSig(int?[] sig, byte[] data, int length)
+    {
+        byte b0 = (byte)sig[0]!.Value;
+        int last = length - sig.Length;
         for (int i = 0; i <= last; i++)
         {
-            if (data[i] != 0xB8 || data[i + 1] != 0x0A) continue;   // fast prefilter
+            if (data[i] != b0) continue;   // fast prefilter
             bool ok = true;
-            for (int j = 2; j < CapSig.Length && ok; j++)
-                ok = CapSig[j] is not int b || data[i + j] == (byte)b;
+            for (int j = 1; j < sig.Length && ok; j++)
+                ok = sig[j] is not int b || data[i + j] == (byte)b;
             if (ok) return i;
         }
         return -1;
@@ -180,25 +214,38 @@ public static class GameLauncher
 
     // ---- Steam auth ----
 
-    /// <summary>32-bit PEB ImageBaseAddress (offset 8): valid while suspended, correct under ASLR.</summary>
-    private static bool TryReadImageBase(IntPtr hProc, out uint imageBase)
+    /// <summary>PEB ImageBaseAddress: valid while suspended, correct under ASLR. Up to 1.27.0.0 the
+    /// game is 32-bit (WOW64 PEB, field at +8, 4 bytes); the 1.27 beta (1.27.0.1) is native x64
+    /// (64-bit PEB from ProcessBasicInformation, field at +0x10, 8 bytes). The launcher itself is
+    /// always x64, so it can read both.</summary>
+    private static bool TryReadImageBase(IntPtr hProc, out ulong imageBase)
     {
         imageBase = 0;
         IntPtr peb32 = IntPtr.Zero;
-        if (NtQueryInformationProcess(hProc, ProcessWow64Information, ref peb32, IntPtr.Size, out _) != 0
-            || peb32 == IntPtr.Zero)
+        if (NtQueryInformationProcess(hProc, ProcessWow64Information, ref peb32, IntPtr.Size, out _) != 0)
             return false;
-        var buf = new byte[4];
-        if (!ReadProcessMemory(hProc, peb32 + 8, buf, 4, out _)) return false;
-        imageBase = BitConverter.ToUInt32(buf, 0);
-        return true;
+        var buf = new byte[8];
+        if (peb32 != IntPtr.Zero)
+        {
+            if (!ReadProcessMemory(hProc, peb32 + 8, buf, 4, out _)) return false;
+            imageBase = BitConverter.ToUInt32(buf, 0);
+            return imageBase != 0;
+        }
+        var pbi = new PROCESS_BASIC_INFORMATION();
+        if (NtQueryInformationProcess(hProc, ProcessBasicInformation, ref pbi,
+                                      Marshal.SizeOf<PROCESS_BASIC_INFORMATION>(), out _) != 0
+            || pbi.PebBaseAddress == IntPtr.Zero)
+            return false;
+        if (!ReadProcessMemory(hProc, pbi.PebBaseAddress + 0x10, buf, 8, out _)) return false;
+        imageBase = BitConverter.ToUInt64(buf, 0);
+        return imageBase != 0;
     }
 
     /// <summary>1.27: overwrite the Steam auth base (a wide string in .rdata) in place. The game
     /// builds "{base}capabilities" and "{base}steam/exchange", so the replacement is the server's
     /// Auth URL plus a trailing '/'. .rdata is plaintext (the SteamStub only encrypts .text) and
     /// not relocated, so this works while the process is still suspended.</summary>
-    private static int RepointSteamAuth(IntPtr hProc, string exe, uint imageBase, string authUrl)
+    private static int RepointSteamAuth(IntPtr hProc, string exe, ulong imageBase, string authUrl)
     {
         if (!TryGetSection(exe, ".rdata", out uint rva, out uint size)) return 0;
         IntPtr start = (IntPtr)((long)imageBase + rva);
@@ -270,6 +317,7 @@ public static class GameLauncher
     private const uint CREATE_SUSPENDED = 0x4;
     private const uint PAGE_READWRITE = 0x04;
     private const uint PAGE_EXECUTE_READWRITE = 0x40;
+    private const int ProcessBasicInformation = 0;
     private const int ProcessWow64Information = 26;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -280,6 +328,13 @@ public static class GameLauncher
         public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
         public short wShowWindow, cbReserved2;
         public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PROCESS_BASIC_INFORMATION
+    {
+        public IntPtr ExitStatus, PebBaseAddress, AffinityMask, BasePriority, UniqueProcessId,
+                      InheritedFromUniqueProcessId;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -295,6 +350,10 @@ public static class GameLauncher
 
     [DllImport("ntdll")]
     private static extern int NtQueryInformationProcess(IntPtr h, int cls, ref IntPtr info, int len, out int retLen);
+
+    [DllImport("ntdll")]
+    private static extern int NtQueryInformationProcess(IntPtr h, int cls, ref PROCESS_BASIC_INFORMATION info, int len,
+                                                        out int retLen);
 
     [DllImport("kernel32", SetLastError = true)]
     private static extern bool ReadProcessMemory(IntPtr h, IntPtr addr, byte[] buf, int size, out IntPtr read);
